@@ -13,7 +13,6 @@ import shutil
 from tqdm.notebook import tqdm, trange
 from datetime import datetime, timedelta
 import pickle
-import Event
 
 class Dataset:
 	#top_data_directory is the directory containing all of the
@@ -350,9 +349,47 @@ class Dataset:
 		#sort to be chronological
 		self.time_paired_files = sorted(self.time_paired_files, key=lambda x: self.get_timestamp_from_filename(x[0]))
 		
+		#return losses
+		starting_lengths = [len(self.separated_file_lists[_]) for _ in self.file_prefixes]
+		return lost_from_allowed_dt, lost_from_multiple_candidates, starting_lengths
 
 
+	def plot_timestamp_differences(self, ax=None):
+		if(len(self.time_paired_files) == 0):
+			print("You have not paired timestamps yet")
+			return
 
+		if(ax is None):
+			fig, ax = plt.subplots(figsize=(12,8))
+
+		time_diffs = []
+		for pair in self.time_paired_files:
+			delta = self.get_timestamp_from_filename(pair[0]) - self.get_timestamp_from_filename(pair[1])
+			time_diffs.append(self.get_milliseconds_from_timedelta(delta))
+
+		mean = str(round(np.mean(time_diffs),2))
+		std = str(round(np.std(time_diffs), 2))
+		binwidth = 1 #ms
+		bins = np.arange(min(time_diffs), max(time_diffs), binwidth)
+		ax.hist(time_diffs, bins, label="std: " + str(std) + ", mean: " + str(mean))
+		ax.legend()
+		ax.set_xlabel("differences in timestamp (ms)")
+		ax.set_ylabel("events per" + str(binwidth) + " ms binwidth")
+		return ax
+
+	def get_timestamp_differences(self):
+		if(len(self.time_paired_files) == 0):
+			print("You have not paired timestamps yet")
+			return
+
+		
+
+		time_diffs = []
+		for pair in self.time_paired_files:
+			delta = self.get_timestamp_from_filename(pair[0]) - self.get_timestamp_from_filename(pair[1])
+			time_diffs.append(self.get_milliseconds_from_timedelta(delta))
+
+		return time_diffs #ms
 
 
 
@@ -500,6 +537,8 @@ class Dataset:
 		return self.time_paired_files
 	def get_separated_timestamps(self):
 		return self.separated_timestamps
+	def get_separated_filelists(self):
+		return self.separated_file_lists
 	def get_wavedf(self):
 		return self.wave_df 
 	def get_rawdf(self):
