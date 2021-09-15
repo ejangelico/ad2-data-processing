@@ -35,6 +35,7 @@ class Dataset:
 		self.wave_df = pd.DataFrame() #populated with a pd.DataFrame that contains waveforms
 
 		#data structures for holding info about raw data
+		#separated_file_lists["pmt"] = [file0, file1, file2, ...]
 		self.separated_file_lists = {} #indexed by string prefix of files: "pmt" or "anode" for example
 		self.separated_timestamps = {} #datetime objects
 		self.file_prefixes = []
@@ -53,7 +54,7 @@ class Dataset:
 	#for example, file_prefixes = ["pmt", "anode"]
 	#Date of dataset is used because the file timestamps dont contain 
 	#the month or year. If absolute times matter, include the date.
-	#event_limit if you want only some events
+	#event_limit = [min event number, max event number] (in order please, can use -1)
 	def load_raw(self, file_prefixes, date_of_dataset="01-01-21", event_limit=None):
 
 		#book keeping
@@ -62,25 +63,13 @@ class Dataset:
 		print("Looking through files in directory " + self.topdir + " and grouping based on prefix")
 		#full list of .csv files
 		file_list = []
-		if(event_limit is not None):
-			looper = tqdm(enumerate(os.listdir(self.topdir)))
-			#loop through all files in directory
-			for i, f in looper:
-				if(i > event_limit):
-					print("hit event limit of " + str(event_limit))
-					break
-				#find which are csvs
-				if(os.path.isfile(os.path.join(self.topdir, f)) and f.endswith('.csv')):
-					file_list.append(f)
-					
-		else:
-			looper = tqdm(enumerate(os.listdir(self.topdir)))
-			#loop through all files in directory
-			for i, f in looper:
-				#find which are csvs
-				if(os.path.isfile(os.path.join(self.topdir, f)) and f.endswith('.csv')):
-					file_list.append(f)
-					
+		looper = tqdm(enumerate(os.listdir(self.topdir)))
+		#loop through all files in directory
+		for i, f in looper:
+			#find which are csvs
+			if(os.path.isfile(os.path.join(self.topdir, f)) and f.endswith('.csv')):
+				file_list.append(f)
+				
 		
 		#add prefixes to separated file lists self attribute
 		self.file_prefixes = file_prefixes
@@ -99,6 +88,24 @@ class Dataset:
 			(list(t) for t in zip(*sorted(zip(self.separated_timestamps[pref], self.separated_file_lists[pref]))))
 
 			print("Done: found " + str(len(self.separated_file_lists[pref])) + "\n\n")
+
+		if(event_limit is not None):
+			print("Limiting the number of events to the chronological range:", end=' ')
+			print(event_limit)
+			for pref in self.separated_timestamps:
+				if(event_limit[0] < 0):
+					event_limit[0] = 0 
+				if(event_limit[1] >= len(self.separated_timestamps[pref])):
+					event_limit[1] = len(self.separated_timestamps[pref]) - 1
+				if(event_limit[0] >= len(self.separated_timestamps[pref])):
+					self.separated_file_lists[pref] = []
+					self.separated_timestamps[pref] = []
+					continue
+
+				self.separated_timestamps[pref] = self.separated_timestamps[pref][event_limit[0]:event_limit[1]]
+				self.separated_file_lists[pref] = self.separated_file_lists[pref][event_limit[0]:event_limit[1]]
+
+
 		
 
 		
@@ -305,6 +312,13 @@ class Dataset:
 		#ax.hist(dts)
 		#plt.show()
 
+		#characterization: see what the time difference is
+		#between a file and its next to closest event in other scope
+		
+
+		
+
+
 		print("Lost " + str(lost_from_allowed_dt) + " events of " + str(len(scope_0_times)) + " / " + str(len(scope_1_times)) + " due to windowing")
 		print("Dividing, : " + '{0:.2f}'.format(lost_from_allowed_dt/float(len(scope_0_times))) + " / " + '{0:.2f}'.format(lost_from_allowed_dt/float(len(scope_1_times))))
 		#debugging, count how many stamps have multiple candidates
@@ -328,6 +342,7 @@ class Dataset:
 			multiplicities[n] += 1 
 		print("Multiplicities with distillation:", end=' ')
 		print(multiplicities)
+
 		
 		#fig, ax = plt.subplots(figsize=(12,8))
 		#dts = [_["mindt"] for _ in scope_0_candidates if _["mindt"] is not None]
@@ -506,6 +521,8 @@ class Dataset:
 	def print_timestamps_sidebyside(self, n = 30):
 		for i in range(n):
 			for pref in self.file_prefixes:
+				if(i >= len(self.separated_timestamps[pref])):
+					continue
 				print(pref+str(self.get_timestamp_from_filename(self.separated_file_lists[pref][i])) + ", ", end='')
 			print("\n")
 
