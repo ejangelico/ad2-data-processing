@@ -5,9 +5,10 @@ Gratta group code for processing data from analog discovery 2 (AD2)
 ### Note on installation
 I've used a system of progress bars in the Dataset.py class that will only work properly in jupyter notebook with the following installation steps performed
 
-`pip install tqdm ipywidgets
+```
+pip install tqdm ipywidgets
 jupyter nbextension enable --py widgetsnbextension
-`
+```
 
 # Data structure and analysis flow
 
