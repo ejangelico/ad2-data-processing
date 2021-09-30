@@ -8,12 +8,14 @@ from scipy import signal
 import random
 import pandas as pd
 from scipy.ndimage import gaussian_filter
+from scipy.optimize import curve_fit
 from pathlib import Path
 import shutil
 from tqdm.notebook import tqdm, trange
 from datetime import datetime, timedelta
 import pickle
-import Event
+import yaml
+#import Event
 
 class Dataset:
 	#top_data_directory is the directory containing all of the
@@ -43,10 +45,10 @@ class Dataset:
 		#data structures for time paired events
 		#[[pmtfile, anodefile], [pmtfile, anodefile], ...] 
 		#where the order of files follows the order of file_prefixes
-		self.time_paired_files = [] 
+		self.time_paired_files = []
 		self.date_of_dataset = None
 
-
+		
 	#----------Loading and saving functions----------------#
 
 	#does an "ls" of the raw data directory
@@ -118,6 +120,15 @@ class Dataset:
 
 	#implement def load_reduced and load_wave and save here. 
 
+	# load yaml configuration file
+	def load_config(self,config_file):
+		with open(config_file) as stream:
+			try:
+				config = yaml.safe_load(stream)
+			except yaml.YAMLError as exc:
+				print(exc)
+		return config
+	
 	#-----end loading and saving functions-------#
 
 	#create a dataframe containing just raw waveform info,
@@ -163,6 +174,7 @@ class Dataset:
 						pair.append(self.separated_file_lists[pref][i])
 				grouped_file_list.append(pair)
 
+				
 		#each pair of files is an event
 		looper = tqdm(grouped_file_list, desc='Parsing waveform data from files')
 		for pair in looper:
@@ -175,17 +187,18 @@ class Dataset:
 
 				#temporary filename variable
 				fn = self.topdir+pair[j]
-
 				#datetime timestamp
 				wave_series[pref+"Timestamp"] = self.get_timestamp_from_filename(fn)
+				wave_series[pref+"Timestamp"] = pd.to_datetime(wave_series[pref+"Timestamp"])
 				#sampling period from header in microseconds
 				wave_series[pref+"SamplingPeriod"] = self.get_sampling_period_from_file(fn)
 
 				#get the data series from file, indexed by "ts" times, "0" channel 0, "1" channel 1
 				d = pd.read_csv(fn, header=None, skiprows=20, names=['ts','0','1'], encoding='iso-8859-1')
+
 				wave_series[pref+'0-data'] = d['0'].to_numpy() #numpy array
 				wave_series[pref+'1-data'] = d['1'].to_numpy() #numpy array
-
+				
 			#append the event to the df
 			self.wave_df = self.wave_df.append(wave_series, ignore_index=True)
 
@@ -505,8 +518,239 @@ class Dataset:
 	def get_rawdf(self):
 		return self.raw_df 
 
+	#----------------------reduction functions-----------------------#
 
+	def create_reduced_df(self, config_file='default_config.yaml'):
+		# check whether the waveform dataframe has been populated yet
+		# if not, throw an error
+		if len(self.wave_df.index)==0:
+			print('Waveform data has not been extracted from raw files.')
+			print('Please call create_waveform_df() before creating reduced dataframe.')
+			return
+
+		t0 = time.time()
+
+		#analysis/processing parameters
+		config_dict = self.load_config(config_file)
+		filter_tau = config_dict['filter_tau'] #ns #filtering anode signal gaussian
+		zero_amplitude_threshold = config_dict['zero_amplitude_threshold'] #if max-sample is less than this, don't integrate
+		fit_amplitude_threshold = config_dict['fit_amplitude_threshold'] #if max-sample is above this, fit the exponential to get tau and amplitude
+		anode_integration_window = config_dict['anode_integration_window'] #us, skip integrating the baseline samples, just integrate this window about peak time.
+		pmt_integration_window = config_dict['pmt_integration_window'] #us, encompasing the entire event
+		rogowski_voltage = config_dict['rogowski_voltage']
+
+		#empty the reduced dataframe, if it is not already
+		reduced_df = pd.DataFrame()
+
+		#because we want the option to use time paired or non time paired,
+		#this list is temporary to allow for either option with the same data struct
+		#grouped_file_list = self.grouped_file_list
+		
+		#each pair of files is an event
+		#looper = tqdm(grouped_file_list, desc='Creating reduced data from raw files')
+		#for pair in looper:
+
+		# loop through all events identified in waveform dataframe creation
+		#each pair of files is an event
+		looper = tqdm(self.wave_df.iterrows(),desc='Reducing waveform data',total=len(self.wave_df.index))
+		for i, event_series in looper:
+			
+			# create pandas series for theevent
+			reduced_series = pd.Series()
+			reduced_series['RogowskiVoltage'] = rogowski_voltage
+
+			# loop through each prefix and create column names based on the prefix
+			for j, pref in enumerate(self.file_prefixes):
+
+				# background subtraction depending on whether scope is for anode or pmts
+				if pref=="anode":
+
+					# if there's no sampling period, the event doesn't have data for this scope
+					if np.isnan(event_series[pref+'SamplingPeriod']):
+
+						reduced_series['GlitchAmplitude'] = None
+						reduced_series['AnodeAmplitude'] = None
+						reduced_series['GlitchTau'] = None
+						reduced_series['AnodeTau'] = None
+						reduced_series['GlitchPeakidx'] = None
+						reduced_series['AnodePeakidx'] = None
+						reduced_series['GlitchIntegral'] = None
+						reduced_series['AnodeIntegral'] = None
+						continue
+						
+					self.baseline_subtract_1(event_series,pref)
+					#calculate amplitude and integral
+					#put processed quantities like amplitude and integral in a reduced series
+					amplitudes, taus, peakidx, integrals = self.get_basic_waveform_properties(event_series, fit_amplitude_threshold, anode_integration_window, zero_amplitude_threshold,pref) #finds tau's if relevant
+
+					reduced_series['GlitchAmplitude'] = amplitudes[0] #in mV, negative or positive
+					reduced_series['AnodeAmplitude'] = amplitudes[1] #in mV, negative or positive
+					reduced_series['GlitchTau'] = taus[0] #time constant of exponential fit
+					reduced_series['AnodeTau'] = taus[1] #time constant of exponential fit
+					reduced_series['GlitchPeakidx'] = peakidx[0] #index referencing event_series['Data']
+					reduced_series['AnodePeakidx'] = peakidx[1] #index referencing event_series['Data']
+					reduced_series['GlitchIntegral'] = integrals[0] #mV*us
+					reduced_series['AnodeIntegral'] = integrals[1] #mV*us
+
+				elif pref=="pmt":
+
+					# if there's no timestamp, the event doesn't have data for this scope
+					if np.isnan(event_series[pref+'SamplingPeriod']):
+						reduced_series['PMT1Amplitude'] = None
+						reduced_series['PMT2Amplitude'] = None
+						reduced_series['PMT1Peakidx'] = None
+						reduced_series['PMT2Peakidx'] = None
+						reduced_series['PMT1Integral'] = None
+						reduced_series['PMT2Integral'] = None
+						reduced_series['PMT1std'] = None
+						reduced_series['PMT2std'] = None
+						continue
+
+						
+					self.baseline_subtract_2(event_series,pref)
+					#calculate amplitude and integral
+					#put processed quantities like amplitude and integral in a reduced series
+					amplitudes, taus, peakidx, integrals = self.get_basic_waveform_properties(event_series, fit_amplitude_threshold, pmt_integration_window, zero_amplitude_threshold,pref) #finds tau's if relevant
+			
+					reduced_series['PMT1Amplitude'] = amplitudes[0] #in mV, negative or positive
+					reduced_series['PMT2Amplitude'] = amplitudes[1] #in mV, negative or positive
+					reduced_series['PMT1Peakidx'] = peakidx[0] #index referencing event_series['Data']
+					reduced_series['PMT2Peakidx'] = peakidx[1] #index referencing event_series['Data']
+					reduced_series['PMT1Integral'] = integrals[0] #million electrons
+					reduced_series['PMT2Integral'] = integrals[1] #million electrons
+					reduced_series['PMT1std'] = np.std(event_series['pmt0-data'])
+					reduced_series['PMT2std'] = np.std(event_series['pmt1-data'])
+
+			reduced_df = reduced_df.append(reduced_series, ignore_index=True)
+
+		self.reduced_df = reduced_df
+		print("Done")
+		#reinitialize
+		reduced_df = pd.DataFrame()
+
+	
 	#----------------------analysis functions------------------------#
+
+	#median of the first 100 us
+	#very "stupid" function, just blindly subtracts
+	def baseline_subtract_1(self,event_series,prefix):
+		dt = event_series[prefix+'SamplingPeriod']#/1000.0 #us, [0] and [1] are identical here, anode vs glitch
+		median_buffer_duration = 100. #us
+		med_buf_didx = int(median_buffer_duration/dt) #number of indices in list for buffer
+
+		for chan in range(2):
+			raw_data = event_series[prefix+str(chan)+'-data']
+			if all(np.isnan(raw_data)):
+				continue
+			med_buffer = raw_data[:med_buf_didx]
+			median = np.median(med_buffer)
+			event_series[prefix+str(chan)+'-data'] = raw_data - median
+
+	#baseline subtract for PMTs, mean subtraction
+	#using the first and last 2 us of entire buffer
+	def baseline_subtract_2(self,event_series,prefix):
+		dt = event_series[prefix+'SamplingPeriod']#/1000.0 #us, [0] and [1] are identical here, anode vs glitch
+		mean_buffer_duration = 1. #us
+		mean_buf_didx = int(mean_buffer_duration/dt) #number of indices in list for buffer
+
+		for chan in range(2):
+			raw_data = event_series[prefix+str(chan)+'-data']
+			if all(np.isnan(raw_data)):
+				continue
+			mean_buffer = raw_data[:mean_buf_didx]
+			mean_buffer += raw_data[-mean_buf_didx:]
+			mean = np.mean(mean_buffer)
+			event_series[prefix+str(chan)+'-data'] = raw_data - mean
+
+		
+	def get_basic_waveform_properties(self, event_series, fit_amplitude_threshold, window, zero_amplitude_threshold, prefix):
+		amps = [] #amplitudes
+		taus = [] #exp time constants, none usually
+		pidx = [] #peak times
+		integrals = []
+
+		for chan in range(2):
+			rawdata = event_series[prefix+str(chan)+'-data']
+
+			if all(np.isnan(rawdata)):
+				amps.append(None)
+				taus.append(None)
+				pidx.append(None)
+				continue
+
+			#for i, rawdata in enumerate(event_series['Data']):
+			#returns highest absolute value, negative or positive polar
+			#i.e. max(-5, 3, key=abs) will return -5 (as opposed to 5)
+			maxval = max(rawdata.min(), rawdata.max(), key=abs) 
+			maxidx = np.where(rawdata == maxval)[0][0]
+
+			if(prefix=="anode"):
+				#if this is larger than the threshold, do a fit. 
+				#and only fit if its an anode channel. 
+				if((abs(maxval) > fit_amplitude_threshold) and False):
+					#do fit later
+					dt = event_series[prefix+'SamplingPeriod'] #ns
+					times = np.array(np.arange(0, len(rawdata)*dt, dt))
+					p0 = [maxval, times[maxidx], dt*10, 150e3] #guess for fitter, amp and time of peak. 
+					popt, pcov = curve_fit(anode_fit_function, times, rawdata, p0=p0)
+					fity = anode_fit_function(times, *popt)
+
+					fig, ax = plt.subplots(figsize=(10, 6))
+					ax.plot([_/1e6 for _ in times], fity, label=popt)
+					ax.plot([_/1e6 for _ in times], rawdata)
+				   #ax.set_xlim([times[maxidx]/1e6 - 0.1, times[maxidx]/1e6 + 0.1])
+					ax.legend()
+					plt.show()
+					pidx.append(maxidx)
+					amps.append(maxval)
+					taus.append(None)
+
+
+				#otherwise, just return peak time, no tau, and amplitude
+				else:
+					amps.append(maxval)
+					taus.append(None)
+					pidx.append(maxidx) 
+
+			elif(prefix == "pmt"):
+				amps.append(maxval)
+				taus.append(None)
+				pidx.append(maxidx)
+
+
+		#integration functions
+		for chan in range(2):
+			rawdata = event_series[prefix+str(chan)+'-data']
+
+			if all(np.isnan(rawdata)):
+				integrals.append(None)
+				continue
+			
+			if(prefix == "anode"):
+				anode_peak = pidx[chan]
+				dt = event_series[prefix+'SamplingPeriod'] #ns
+				lowidx = int(anode_peak + min(window)*1e3/dt)
+				hiidx = int(anode_peak + max(window)*1e3/dt) #1e3 because window in us
+				integ_data = rawdata[lowidx:hiidx]*1000 #mV
+				integrals.append(np.trapz(integ_data, dx=dt)/1e3) #in mV*us
+
+
+			elif(prefix == "pmt"):
+				#check if amplitude is below a threshold, for which we choose not to integrate
+				dt = event_series[prefix+'SamplingPeriod'] #ns
+				lowidx = int(pidx[chan] + min(window)*1e3/dt)
+				hiidx = int(pidx[chan] + max(window)*1e3/dt) #1e3 because window in us
+				integ_data = rawdata[lowidx:hiidx] #V
+				integ_vs = np.trapz(integ_data, dx=dt)/1e9 #V*s
+				integ_coul = integ_vs/50.0 #50 ohms
+				integ_mega_elec = (integ_coul/1.6e-19)/1e9 #billion electrons
+				integrals.append(integ_mega_elec) #billion electrons
+
+
+
+
+
+		return amps, taus, pidx, integrals
 
 
 
