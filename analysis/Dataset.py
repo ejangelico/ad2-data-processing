@@ -15,7 +15,7 @@ from tqdm.notebook import tqdm, trange
 from datetime import datetime, timedelta
 import pickle
 import yaml
-#import Event
+
 
 class Dataset:
 	#top_data_directory is the directory containing all of the
@@ -26,6 +26,12 @@ class Dataset:
 	#they are all referencing the top_data_directory as the point of reference. 
 	#top data directory, and all others, need "/" at the end of string. 
 	def __init__(self, top_data_directory):
+
+		#check if directory exists
+		if(os.path.isdir(top_data_directory) == 0):
+			print("Directory does not exist: " + top_data_directory)
+			print("Please try again")
+
 		self.topdir = top_data_directory
 		self.wave_dir = "waves/"
 		self.reduced_dir = "reduced/"
@@ -38,6 +44,24 @@ class Dataset:
 		self.wave_df = pd.DataFrame() #populated with a pd.DataFrame that contains waveforms
 
 		#data structures for holding info about raw data
+		#separated_file_lists["pmt"] = [file0, file1, file2, ...]
+		self.separated_file_lists = {} #indexed by string prefix of files: "pmt" or "anode" for example
+		self.separated_timestamps = {} #datetime objects
+		self.file_prefixes = []
+
+		#data structures for time paired events
+		#[[pmtfile, anodefile], [pmtfile, anodefile], ...] 
+		#where the order of files follows the order of file_prefixes
+		self.time_paired_files = [] 
+		self.date_of_dataset = None
+
+	def clear(self):
+		#both of these dataframes indexible by event number
+		self.reduced_df = pd.DataFrame() #populated with a pd.DataFrame, tabulating reduced data info
+		self.wave_df = pd.DataFrame() #populated with a pd.DataFrame that contains waveforms
+
+		#data structures for holding info about raw data
+		#separated_file_lists["pmt"] = [file0, file1, file2, ...]
 		self.separated_file_lists = {} #indexed by string prefix of files: "pmt" or "anode" for example
 		self.separated_timestamps = {} #datetime objects
 		self.file_prefixes = []
@@ -48,7 +72,7 @@ class Dataset:
 		self.time_paired_files = []
 		self.date_of_dataset = None
 
-		
+
 	#----------Loading and saving functions----------------#
 
 	#does an "ls" of the raw data directory
@@ -56,8 +80,11 @@ class Dataset:
 	#for example, file_prefixes = ["pmt", "anode"]
 	#Date of dataset is used because the file timestamps dont contain 
 	#the month or year. If absolute times matter, include the date.
-	#event_limit if you want only some events
+	#event_limit = [min event number, max event number] (in order please, can use -1)
 	def load_raw(self, file_prefixes, date_of_dataset="01-01-21", event_limit=None):
+
+		#clear existing data
+		self.clear()
 
 		#book keeping
 		self.date_of_dataset = date_of_dataset
@@ -65,25 +92,16 @@ class Dataset:
 		print("Looking through files in directory " + self.topdir + " and grouping based on prefix")
 		#full list of .csv files
 		file_list = []
-		if(event_limit is not None):
-			looper = tqdm(enumerate(os.listdir(self.topdir)))
-			#loop through all files in directory
-			for i, f in looper:
-				if(i > event_limit):
-					print("hit event limit of " + str(event_limit))
-					break
-				#find which are csvs
-				if(os.path.isfile(os.path.join(self.topdir, f)) and f.endswith('.csv')):
-					file_list.append(f)
-					
-		else:
-			looper = tqdm(enumerate(os.listdir(self.topdir)))
-			#loop through all files in directory
-			for i, f in looper:
-				#find which are csvs
-				if(os.path.isfile(os.path.join(self.topdir, f)) and f.endswith('.csv')):
-					file_list.append(f)
-					
+		looper = tqdm(enumerate(os.listdir(self.topdir)))
+		#loop through all files in directory
+		for i, f in looper:
+			#find which are csvs
+			if(os.path.isfile(os.path.join(self.topdir, f)) and f.endswith('.csv')):
+				file_list.append(f)
+		
+		if(len(file_list) == 0):
+			print("No data files found in directory: " + self.topdir)
+			return
 		
 		#add prefixes to separated file lists self attribute
 		self.file_prefixes = file_prefixes
@@ -96,12 +114,33 @@ class Dataset:
 
 			#sort the list by timestamp
 			self.separated_timestamps[pref] = [self.get_timestamp_from_filename(_) for _ in self.separated_file_lists[pref]]
+			if(len(self.separated_timestamps[pref]) == 0):
+				print("Found no files with the prefix: " + pref)
+				continue
 			#this line sorts both lists simultaneously 
 			#based on the datetime values in the date_times list
 			self.separated_timestamps[pref], self.separated_file_lists[pref] = \
 			(list(t) for t in zip(*sorted(zip(self.separated_timestamps[pref], self.separated_file_lists[pref]))))
 
 			print("Done: found " + str(len(self.separated_file_lists[pref])) + "\n\n")
+
+		if(event_limit is not None):
+			print("Limiting the number of events to the chronological range:", end=' ')
+			print(event_limit)
+			for pref in self.separated_timestamps:
+				if(event_limit[0] < 0):
+					event_limit[0] = 0 
+				if(event_limit[1] >= len(self.separated_timestamps[pref])):
+					event_limit[1] = len(self.separated_timestamps[pref]) - 1
+				if(event_limit[0] >= len(self.separated_timestamps[pref])):
+					self.separated_file_lists[pref] = []
+					self.separated_timestamps[pref] = []
+					continue
+
+				self.separated_timestamps[pref] = self.separated_timestamps[pref][event_limit[0]:event_limit[1]]
+				self.separated_file_lists[pref] = self.separated_file_lists[pref][event_limit[0]:event_limit[1]]
+
+
 		
 
 		
@@ -319,6 +358,13 @@ class Dataset:
 		#ax.hist(dts)
 		#plt.show()
 
+		#characterization: see what the time difference is
+		#between a file and its next to closest event in other scope
+		
+
+		
+
+
 		print("Lost " + str(lost_from_allowed_dt) + " events of " + str(len(scope_0_times)) + " / " + str(len(scope_1_times)) + " due to windowing")
 		print("Dividing, : " + '{0:.2f}'.format(lost_from_allowed_dt/float(len(scope_0_times))) + " / " + '{0:.2f}'.format(lost_from_allowed_dt/float(len(scope_1_times))))
 		#debugging, count how many stamps have multiple candidates
@@ -342,6 +388,7 @@ class Dataset:
 			multiplicities[n] += 1 
 		print("Multiplicities with distillation:", end=' ')
 		print(multiplicities)
+
 		
 		#fig, ax = plt.subplots(figsize=(12,8))
 		#dts = [_["mindt"] for _ in scope_0_candidates if _["mindt"] is not None]
@@ -363,9 +410,47 @@ class Dataset:
 		#sort to be chronological
 		self.time_paired_files = sorted(self.time_paired_files, key=lambda x: self.get_timestamp_from_filename(x[0]))
 		
+		#return losses
+		starting_lengths = [len(self.separated_file_lists[_]) for _ in self.file_prefixes]
+		return lost_from_allowed_dt, lost_from_multiple_candidates, starting_lengths
 
 
+	def plot_timestamp_differences(self, ax=None):
+		if(len(self.time_paired_files) == 0):
+			print("You have not paired timestamps yet")
+			return
 
+		if(ax is None):
+			fig, ax = plt.subplots(figsize=(12,8))
+
+		time_diffs = []
+		for pair in self.time_paired_files:
+			delta = self.get_timestamp_from_filename(pair[0]) - self.get_timestamp_from_filename(pair[1])
+			time_diffs.append(self.get_milliseconds_from_timedelta(delta))
+
+		mean = str(round(np.mean(time_diffs),2))
+		std = str(round(np.std(time_diffs), 2))
+		binwidth = 1 #ms
+		bins = np.arange(min(time_diffs), max(time_diffs), binwidth)
+		ax.hist(time_diffs, bins, label="std: " + str(std) + ", mean: " + str(mean))
+		ax.legend()
+		ax.set_xlabel("differences in timestamp (ms)")
+		ax.set_ylabel("events per" + str(binwidth) + " ms binwidth")
+		return ax
+
+	def get_timestamp_differences(self):
+		if(len(self.time_paired_files) == 0):
+			print("You have not paired timestamps yet")
+			return
+
+		
+
+		time_diffs = []
+		for pair in self.time_paired_files:
+			delta = self.get_timestamp_from_filename(pair[0]) - self.get_timestamp_from_filename(pair[1])
+			time_diffs.append(self.get_milliseconds_from_timedelta(delta))
+
+		return time_diffs #ms
 
 
 
@@ -482,6 +567,8 @@ class Dataset:
 	def print_timestamps_sidebyside(self, n = 30):
 		for i in range(n):
 			for pref in self.file_prefixes:
+				if(i >= len(self.separated_timestamps[pref])):
+					continue
 				print(pref+str(self.get_timestamp_from_filename(self.separated_file_lists[pref][i])) + ", ", end='')
 			print("\n")
 
@@ -513,10 +600,14 @@ class Dataset:
 		return self.time_paired_files
 	def get_separated_timestamps(self):
 		return self.separated_timestamps
+	def get_separated_filelists(self):
+		return self.separated_file_lists
 	def get_wavedf(self):
 		return self.wave_df 
 	def get_rawdf(self):
 		return self.raw_df 
+  def get_nevents_loaded(self):
+		return len(self.wave_df.index)
 
 	#----------------------reduction functions-----------------------#
 
@@ -564,7 +655,6 @@ class Dataset:
 
 				# background subtraction depending on whether scope is for anode or pmts
 				if pref=="anode":
-
 					# if there's no sampling period, the event doesn't have data for this scope
 					if np.isnan(event_series[pref+'SamplingPeriod']):
 
