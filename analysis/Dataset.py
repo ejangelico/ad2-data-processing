@@ -23,6 +23,12 @@ class Dataset:
 	#they are all referencing the top_data_directory as the point of reference. 
 	#top data directory, and all others, need "/" at the end of string. 
 	def __init__(self, top_data_directory):
+
+		#check if directory exists
+		if(os.path.isdir(top_data_directory) == 0):
+			print("Directory does not exist: " + top_data_directory)
+			print("Please try again")
+
 		self.topdir = top_data_directory
 		self.wave_dir = "waves/"
 		self.reduced_dir = "reduced/"
@@ -46,6 +52,24 @@ class Dataset:
 		self.time_paired_files = [] 
 		self.date_of_dataset = None
 
+	def clear(self):
+		#both of these dataframes indexible by event number
+		self.reduced_df = pd.DataFrame() #populated with a pd.DataFrame, tabulating reduced data info
+		self.wave_df = pd.DataFrame() #populated with a pd.DataFrame that contains waveforms
+
+		#data structures for holding info about raw data
+		#separated_file_lists["pmt"] = [file0, file1, file2, ...]
+		self.separated_file_lists = {} #indexed by string prefix of files: "pmt" or "anode" for example
+		self.separated_timestamps = {} #datetime objects
+		self.file_prefixes = []
+
+		#data structures for time paired events
+		#[[pmtfile, anodefile], [pmtfile, anodefile], ...] 
+		#where the order of files follows the order of file_prefixes
+		self.time_paired_files = [] 
+		self.date_of_dataset = None
+
+
 
 	#----------Loading and saving functions----------------#
 
@@ -56,6 +80,9 @@ class Dataset:
 	#the month or year. If absolute times matter, include the date.
 	#event_limit = [min event number, max event number] (in order please, can use -1)
 	def load_raw(self, file_prefixes, date_of_dataset="01-01-21", event_limit=None):
+
+		#clear existing data
+		self.clear()
 
 		#book keeping
 		self.date_of_dataset = date_of_dataset
@@ -69,7 +96,10 @@ class Dataset:
 			#find which are csvs
 			if(os.path.isfile(os.path.join(self.topdir, f)) and f.endswith('.csv')):
 				file_list.append(f)
-				
+		
+		if(len(file_list) == 0):
+			print("No data files found in directory: " + self.topdir)
+			return
 		
 		#add prefixes to separated file lists self attribute
 		self.file_prefixes = file_prefixes
@@ -82,6 +112,9 @@ class Dataset:
 
 			#sort the list by timestamp
 			self.separated_timestamps[pref] = [self.get_timestamp_from_filename(_) for _ in self.separated_file_lists[pref]]
+			if(len(self.separated_timestamps[pref]) == 0):
+				print("Found no files with the prefix: " + pref)
+				continue
 			#this line sorts both lists simultaneously 
 			#based on the datetime values in the date_times list
 			self.separated_timestamps[pref], self.separated_file_lists[pref] = \
@@ -560,6 +593,9 @@ class Dataset:
 		return self.wave_df 
 	def get_rawdf(self):
 		return self.raw_df 
+
+	def get_nevents_loaded(self):
+		return len(self.wave_df.index)
 
 
 	#----------------------analysis functions------------------------#
