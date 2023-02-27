@@ -55,6 +55,12 @@ class Dataset:
 		self.time_paired_files = [] 
 		self.date_of_dataset = None
 
+		#saving the configuration used for data reduction
+		self.config_dict = None
+
+		#save average waveforms, if computed
+		self.avg_wave = None
+
 	def clear(self):
 		#both of these dataframes indexible by event number
 		self.reduced_df = pd.DataFrame() #populated with a pd.DataFrame, tabulating reduced data info
@@ -161,11 +167,13 @@ class Dataset:
 
 	# load yaml configuration file
 	def load_config(self,config_file):
+		print("Loading config file " + config_file)
 		with open(config_file) as stream:
 			try:
 				config = yaml.safe_load(stream)
 			except yaml.YAMLError as exc:
 				print(exc)
+		self.config_dict = config 
 		return config
 	
 	#-----end loading and saving functions-------#
@@ -184,7 +192,13 @@ class Dataset:
 			return
 
 		#empty the present dataframe, if it is not already
-		self.wave_df = pd.DataFrame()
+		df_cols = []
+		for pref in self.file_prefixes:
+			df_cols.append(pref+"Timestamp")
+			df_cols.append(pref+"SamplingPeriod")
+			df_cols.append(pref+"0-data")
+			df_cols.append(pref+"1-data")
+		self.wave_df = pd.DataFrame(columns=df_cols)
 
 		#because we want the option to use time paired or non time paired,
 		#this list is temporary to allow for either option with the same data struct
@@ -538,7 +552,11 @@ class Dataset:
 		dataset_date_truncated = self.date_of_dataset.split('-') 
 		dataset_date_truncated = dataset_date_truncated[0] + "-" + dataset_date_truncated[-1]
 		date_format = "%m-%y %d.%H.%M.%S.%f"
-		date = datetime.strptime(dataset_date_truncated + " " + timedotted, date_format)
+		try:
+			date = datetime.strptime(dataset_date_truncated + " " + timedotted, date_format)
+		except:
+			#in some cases, the filename may not have a timestamp. in this case, return current time
+			date = datetime.now()
 		return date
 
 	#takes a datetime as input and creates a filename
@@ -606,7 +624,7 @@ class Dataset:
 		return self.wave_df 
 	def get_rawdf(self):
 		return self.raw_df 
-  def get_nevents_loaded(self):
+	def get_nevents_loaded(self):
 		return len(self.wave_df.index)
 
 	#----------------------reduction functions-----------------------#
@@ -623,6 +641,9 @@ class Dataset:
 
 		#analysis/processing parameters
 		config_dict = self.load_config(config_file)
+		#store for later, if pickled
+		self.config_dict = config_dict 
+
 		filter_tau = config_dict['filter_tau'] #ns #filtering anode signal gaussian
 		zero_amplitude_threshold = config_dict['zero_amplitude_threshold'] #if max-sample is less than this, don't integrate
 		fit_amplitude_threshold = config_dict['fit_amplitude_threshold'] #if max-sample is above this, fit the exponential to get tau and amplitude
@@ -650,8 +671,12 @@ class Dataset:
 			reduced_series = pd.Series()
 			reduced_series['RogowskiVoltage'] = rogowski_voltage
 
+
 			# loop through each prefix and create column names based on the prefix
 			for j, pref in enumerate(self.file_prefixes):
+				#include the timestamp elements, which are used to reference back to the waveforms themselves
+				reduced_series[pref+"Timestamp"] = event_series[pref+"Timestamp"] #will turn out None for empty prefix entries
+
 
 				# background subtraction depending on whether scope is for anode or pmts
 				if pref=="anode":
@@ -667,8 +692,9 @@ class Dataset:
 						reduced_series['GlitchIntegral'] = None
 						reduced_series['AnodeIntegral'] = None
 						continue
-						
-					self.baseline_subtract_1(event_series,pref)
+					
+					
+					self.baseline_subtract_window(event_series,pref)
 					#calculate amplitude and integral
 					#put processed quantities like amplitude and integral in a reduced series
 					amplitudes, taus, peakidx, integrals = self.get_basic_waveform_properties(event_series, fit_amplitude_threshold, anode_integration_window, zero_amplitude_threshold,pref) #finds tau's if relevant
@@ -696,8 +722,9 @@ class Dataset:
 						reduced_series['PMT2std'] = None
 						continue
 
-						
-					self.baseline_subtract_2(event_series,pref)
+					
+
+					self.baseline_subtract_window(event_series,pref)
 					#calculate amplitude and integral
 					#put processed quantities like amplitude and integral in a reduced series
 					amplitudes, taus, peakidx, integrals = self.get_basic_waveform_properties(event_series, fit_amplitude_threshold, pmt_integration_window, zero_amplitude_threshold,pref) #finds tau's if relevant
@@ -721,36 +748,32 @@ class Dataset:
 	
 	#----------------------analysis functions------------------------#
 
-	#median of the first 100 us
-	#very "stupid" function, just blindly subtracts
-	def baseline_subtract_1(self,event_series,prefix):
-		dt = event_series[prefix+'SamplingPeriod']#/1000.0 #us, [0] and [1] are identical here, anode vs glitch
-		median_buffer_duration = 100. #us
-		med_buf_didx = int(median_buffer_duration/dt) #number of indices in list for buffer
+	#mean of the samples within a hard configured time window.
+	#uses the config yaml file, without it, it assumes first 100 us 
+	#One step up would be to peak find and go relative to a peak.
+	#Discriminates between PMTs and Anode based on the prefix
+	def baseline_subtract_window(self,event_series,prefix):
+		dt = event_series[prefix+'SamplingPeriod']# in us
+		
+		if(prefix == "anode"):
+			window = self.config_dict["anode_baseline_window"]
+		elif(prefix == "pmt"):
+			window = self.config_dict["pmt_baseline_window"]
+		else:
+			window = self.config_dict["baseline_window"]
+
+		window_indices = [int(min(window)/dt), int(max(window)/dt)] #indexes defining the window
 
 		for chan in range(2):
 			raw_data = event_series[prefix+str(chan)+'-data']
+			#if this prefix/event doesnt exist, it will be nans
 			if all(np.isnan(raw_data)):
 				continue
-			med_buffer = raw_data[:med_buf_didx]
-			median = np.median(med_buffer)
-			event_series[prefix+str(chan)+'-data'] = raw_data - median
+			baseline_buffer = raw_data[min(window_indices):max(window_indices)]
+			baseline = np.mean(baseline_buffer)
+			event_series[prefix+str(chan)+'-data'] = raw_data - baseline
 
-	#baseline subtract for PMTs, mean subtraction
-	#using the first and last 2 us of entire buffer
-	def baseline_subtract_2(self,event_series,prefix):
-		dt = event_series[prefix+'SamplingPeriod']#/1000.0 #us, [0] and [1] are identical here, anode vs glitch
-		mean_buffer_duration = 1. #us
-		mean_buf_didx = int(mean_buffer_duration/dt) #number of indices in list for buffer
 
-		for chan in range(2):
-			raw_data = event_series[prefix+str(chan)+'-data']
-			if all(np.isnan(raw_data)):
-				continue
-			mean_buffer = raw_data[:mean_buf_didx]
-			mean_buffer += raw_data[-mean_buf_didx:]
-			mean = np.mean(mean_buffer)
-			event_series[prefix+str(chan)+'-data'] = raw_data - mean
 
 		
 	def get_basic_waveform_properties(self, event_series, fit_amplitude_threshold, window, zero_amplitude_threshold, prefix):
@@ -775,22 +798,23 @@ class Dataset:
 			maxidx = np.where(rawdata == maxval)[0][0]
 
 			if(prefix=="anode"):
-				#if this is larger than the threshold, do a fit. 
-				#and only fit if its an anode channel. 
+				#if the signal is larger than the threshold, do an exponential fit. 
 				if((abs(maxval) > fit_amplitude_threshold) and False):
 					#do fit later
-					dt = event_series[prefix+'SamplingPeriod'] #ns
+					dt = event_series[prefix+'SamplingPeriod'] #us
 					times = np.array(np.arange(0, len(rawdata)*dt, dt))
 					p0 = [maxval, times[maxidx], dt*10, 150e3] #guess for fitter, amp and time of peak. 
+					#somehow anode_fit_function got lost. reimplement this later.
 					popt, pcov = curve_fit(anode_fit_function, times, rawdata, p0=p0)
 					fity = anode_fit_function(times, *popt)
-
+					"""
 					fig, ax = plt.subplots(figsize=(10, 6))
 					ax.plot([_/1e6 for _ in times], fity, label=popt)
 					ax.plot([_/1e6 for _ in times], rawdata)
 				   #ax.set_xlim([times[maxidx]/1e6 - 0.1, times[maxidx]/1e6 + 0.1])
 					ax.legend()
 					plt.show()
+					"""
 					pidx.append(maxidx)
 					amps.append(maxval)
 					taus.append(None)
@@ -818,20 +842,19 @@ class Dataset:
 			
 			if(prefix == "anode"):
 				anode_peak = pidx[chan]
-				dt = event_series[prefix+'SamplingPeriod'] #ns
-				lowidx = int(anode_peak + min(window)*1e3/dt)
-				hiidx = int(anode_peak + max(window)*1e3/dt) #1e3 because window in us
+				dt = event_series[prefix+'SamplingPeriod'] #us
+				lowidx = int(anode_peak + min(window)/dt)
+				hiidx = int(anode_peak + max(window)/dt) 
 				integ_data = rawdata[lowidx:hiidx]*1000 #mV
-				integrals.append(np.trapz(integ_data, dx=dt)/1e3) #in mV*us
+				integrals.append(np.trapz(integ_data, dx=dt)) #in mV*us
 
 
 			elif(prefix == "pmt"):
-				#check if amplitude is below a threshold, for which we choose not to integrate
-				dt = event_series[prefix+'SamplingPeriod'] #ns
-				lowidx = int(pidx[chan] + min(window)*1e3/dt)
-				hiidx = int(pidx[chan] + max(window)*1e3/dt) #1e3 because window in us
+				dt = event_series[prefix+'SamplingPeriod'] #us
+				lowidx = int(pidx[chan] + min(window)/dt)
+				hiidx = int(pidx[chan] + max(window)/dt) #1e3 because window in us
 				integ_data = rawdata[lowidx:hiidx] #V
-				integ_vs = np.trapz(integ_data, dx=dt)/1e9 #V*s
+				integ_vs = np.trapz(integ_data, dx=dt)/1e6 #V*s
 				integ_coul = integ_vs/50.0 #50 ohms
 				integ_mega_elec = (integ_coul/1.6e-19)/1e9 #billion electrons
 				integrals.append(integ_mega_elec) #billion electrons
@@ -841,6 +864,39 @@ class Dataset:
 
 
 		return amps, taus, pidx, integrals
+
+
+	#for data that is triggered in a time-consistent way,
+	#it can be easy to obtain an average waveform from the dataset. 
+	def get_average_wave(self):
+		if(self.avg_wave is not None):
+			return self.avg_wave
+
+		avg_wave = {}
+		for ch in range(2):
+			avg_wave[ch] = []
+
+			for i, row in self.wave_df.iterrows():
+				self.baseline_subtract_window(row, "acq") #baseline subtracts in place
+				if(len(avg_wave[ch]) == 0):
+					avg_wave[ch] = np.array(row["acq"+str(ch)+"-data"])
+				else:
+					avg_wave[ch] = avg_wave[ch] + np.array(row["acq"+str(ch)+"-data"])
+
+			#normalize
+			avg_wave[ch] /= len(self.wave_df.index)
+
+		self.avg_wave = avg_wave
+		return avg_wave
+
+	#utility to quickly get a timebase from first event in dataset
+	def get_timebase(self, prefix):
+		event = self.wave_df.iloc[0]
+		print(len(event[prefix+'0-data']))
+		ts = np.array(range(len(event[prefix+'0-data'])))*event[prefix+'SamplingPeriod']
+		return ts
+
+
 
 
 
