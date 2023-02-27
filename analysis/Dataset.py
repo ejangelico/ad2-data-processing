@@ -58,6 +58,9 @@ class Dataset:
 		#saving the configuration used for data reduction
 		self.config_dict = None
 
+		#save average waveforms, if computed
+		self.avg_wave = None
+
 	def clear(self):
 		#both of these dataframes indexible by event number
 		self.reduced_df = pd.DataFrame() #populated with a pd.DataFrame, tabulating reduced data info
@@ -164,11 +167,13 @@ class Dataset:
 
 	# load yaml configuration file
 	def load_config(self,config_file):
+		print("Loading config file " + config_file)
 		with open(config_file) as stream:
 			try:
 				config = yaml.safe_load(stream)
 			except yaml.YAMLError as exc:
 				print(exc)
+		self.config_dict = config 
 		return config
 	
 	#-----end loading and saving functions-------#
@@ -547,7 +552,11 @@ class Dataset:
 		dataset_date_truncated = self.date_of_dataset.split('-') 
 		dataset_date_truncated = dataset_date_truncated[0] + "-" + dataset_date_truncated[-1]
 		date_format = "%m-%y %d.%H.%M.%S.%f"
-		date = datetime.strptime(dataset_date_truncated + " " + timedotted, date_format)
+		try:
+			date = datetime.strptime(dataset_date_truncated + " " + timedotted, date_format)
+		except:
+			#in some cases, the filename may not have a timestamp. in this case, return current time
+			date = datetime.now()
 		return date
 
 	#takes a datetime as input and creates a filename
@@ -750,6 +759,8 @@ class Dataset:
 			window = self.config_dict["anode_baseline_window"]
 		elif(prefix == "pmt"):
 			window = self.config_dict["pmt_baseline_window"]
+		else:
+			window = self.config_dict["baseline_window"]
 
 		window_indices = [int(min(window)/dt), int(max(window)/dt)] #indexes defining the window
 
@@ -853,6 +864,39 @@ class Dataset:
 
 
 		return amps, taus, pidx, integrals
+
+
+	#for data that is triggered in a time-consistent way,
+	#it can be easy to obtain an average waveform from the dataset. 
+	def get_average_wave(self):
+		if(self.avg_wave is not None):
+			return self.avg_wave
+
+		avg_wave = {}
+		for ch in range(2):
+			avg_wave[ch] = []
+
+			for i, row in self.wave_df.iterrows():
+				self.baseline_subtract_window(row, "acq") #baseline subtracts in place
+				if(len(avg_wave[ch]) == 0):
+					avg_wave[ch] = np.array(row["acq"+str(ch)+"-data"])
+				else:
+					avg_wave[ch] = avg_wave[ch] + np.array(row["acq"+str(ch)+"-data"])
+
+			#normalize
+			avg_wave[ch] /= len(self.wave_df.index)
+
+		self.avg_wave = avg_wave
+		return avg_wave
+
+	#utility to quickly get a timebase from first event in dataset
+	def get_timebase(self, prefix):
+		event = self.wave_df.iloc[0]
+		print(len(event[prefix+'0-data']))
+		ts = np.array(range(len(event[prefix+'0-data'])))*event[prefix+'SamplingPeriod']
+		return ts
+
+
 
 
 
