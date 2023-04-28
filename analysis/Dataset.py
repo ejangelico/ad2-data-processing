@@ -48,6 +48,10 @@ class Dataset:
 		self.separated_file_lists = {} #indexed by string prefix of files: "pmt" or "anode" for example
 		self.separated_timestamps = {} #datetime objects
 		self.file_prefixes = []
+		#glassman events are timestamps and HV information from the glassman control AD2.
+		#this allows you to determine what the high voltage info was at a time of an event. 
+		self.g_events_file = None
+		self.g_events = {} #["time"] = datetime, ["v_cont"] = kV applied by controller, ["v_meas"] = kV measured by analog monitor
 
 		#data structures for time paired events
 		#[[pmtfile, anodefile], [pmtfile, anodefile], ...] 
@@ -60,6 +64,7 @@ class Dataset:
 
 		#save average waveforms, if computed
 		self.avg_wave = None
+
 
 	def clear(self):
 		#both of these dataframes indexible by event number
@@ -149,7 +154,25 @@ class Dataset:
 
 		
 
-		
+	def load_glassman_events(self, g_file):
+		self.g_events_file = g_file 
+		dd = np.genfromtxt(g_file, delimiter=',', dtype=float)
+		ts = dd[:,0] #timestamp in second since epoch
+		ts = [datetime.fromtimestamp(_) for _ in ts] 
+		v_meas = dd[:,1] #the high voltage monitor voltage measured at output of glassman supply
+		v_cont = dd[:,2] #the output of AD2 DAC at time of event, driving the glassman supply HV. 
+
+		#there is a linear relationship between the two recorded voltages, and it is measured
+		#in a calibration procedure with stored "calibrations" data where we took a 1000x attenuation
+		#DC HV probe and measured the at the end of the delivery cable as it ramped. 
+		v_cont = [_*7.556 + 0.022 for _ in v_cont]
+		v_meas = [_*7.58 - 0.046 for _ in v_meas]
+
+		self.g_events = {"time":ts, "v_cont":v_cont, "v_meas":v_meas}
+
+
+
+
 
 
 	#the only reason to save any loaded raw data
@@ -236,6 +259,10 @@ class Dataset:
 			for j, pref in enumerate(self.file_prefixes):
 				#if this "file" in the pair is "None", don't file the pd.Series()
 				if(pair[j] is None):
+					wave_series[pref+"Timestamp"] = None
+					wave_series[pref+"SamplingPeriod"] = None
+					wave_series[pref+'0-data'] = []
+					wave_series[pref+'1-data'] = []
 					continue
 
 				#temporary filename variable
@@ -248,9 +275,19 @@ class Dataset:
 
 				#get the data series from file, indexed by "ts" times, "0" channel 0, "1" channel 1
 				d = pd.read_csv(fn, header=None, skiprows=20, names=['ts','0','1'], encoding='iso-8859-1')
+				
+				#if there is an empty column, or channel that is not activated
+				#pd.read_csv fills with nans. 
+				if(np.isnan(d['0']).any()):
+					wave_series[pref+'0-data'] = []
+				else:
+					wave_series[pref+'0-data'] = d['0'].to_numpy() #numpy array
 
-				wave_series[pref+'0-data'] = d['0'].to_numpy() #numpy array
-				wave_series[pref+'1-data'] = d['1'].to_numpy() #numpy array
+				if(np.isnan(d['1']).any()):
+					wave_series[pref+'1-data'] = []
+				else:
+					wave_series[pref+'1-data'] = d['1'].to_numpy() #numpy array
+				
 				
 			#append the event to the df
 			self.wave_df = self.wave_df.append(wave_series, ignore_index=True)
@@ -320,6 +357,7 @@ class Dataset:
 
 		scope_0_times = ts[self.file_prefixes[0]]
 		scope_1_times = ts[self.file_prefixes[1]]
+		print(scope_0_times)
 
 		
 		
@@ -895,6 +933,20 @@ class Dataset:
 		print(len(event[prefix+'0-data']))
 		ts = np.array(range(len(event[prefix+'0-data'])))*event[prefix+'SamplingPeriod']
 		return ts
+	
+	#look at event times and calculate the time difference between
+	#adjacent triggers
+	def get_event_time_differences(self, prefix):
+		ts = self.separated_timestamps[prefix]
+		if(len(ts) == 0):
+			print("No files loaded into raw yet")
+			return
+		
+	
+		dts = [(ts[i] - ts[i-1]).total_seconds() for i in range(1, len(ts))] #seconds
+		return dts
+
+
 
 
 
