@@ -33,11 +33,6 @@ class Dataset:
             print("Please try again")
 
         self.topdir = top_data_directory
-        self.wave_dir = "waves/"
-        self.reduced_dir = "reduced/"
-        self.raw_suffix = ".csv"
-        self.reduced_suffix = ".h5"
-        self.wave_suffix = ".h5"
 
         #both of these dataframes indexible by event number
         self.reduced_df = pd.DataFrame() #populated with a pd.DataFrame, tabulating reduced data info
@@ -83,6 +78,41 @@ class Dataset:
         #where the order of files follows the order of file_prefixes
         self.time_paired_files = []
         self.date_of_dataset = None
+
+    #this function will add two dataset objects together
+    #preserving as much information as possible. One thing this
+    #does not quite preserve in the present version is the date of dataset,
+    #where the only relevant piece of info there is the month (as filenames have the day). 
+    #This should mainly be used when re-chaining datasets that were processed independently
+    #for LLNL batch reduction. I.e. it is assumed that the analysis config and most things are
+    #the same. 
+    def __add__(self, other):
+        newd = Dataset(self.topdir)
+        newd.reduced_df = pd.concat([self.reduced_df, other.reduced_df], ignore_index=True)
+        newd.wave_df = pd.concat([self.wave_df, other.wave_df], ignore_index=True)
+
+        newd.file_prefixes = self.file_prefixes 
+        for pref in self.file_prefixes:
+            if(pref in other.file_prefixes):
+                newd.separated_file_lists[pref] = np.concatenate([self.separated_file_lists[pref], other.separated_file_lists[pref]])
+                newd.separated_timestamps[pref] = np.concatenate([self.separated_timestamps[pref], other.separated_timestamps[pref]])
+            else:
+                print("Cannot add two datasets together because they don't have the same file prefixes!")
+                return None
+            
+        #g_events
+        for key in self.g_events:
+            newd.g_events[key] = np.concatenate([self.g_events[key], other.g_events[key]])
+        
+        #time pairing
+        newd.time_paired_files = np.concatenate([self.time_paired_files, other.time_paired_files])
+        
+        #other elements
+        newd.config_dict = self.config_dict
+        newd.date_of_dataset = self.date_of_dataset
+
+        #I don't think that time sorting any of these lists is relevant at this stage,
+        #so if you have an algorithm that depends on it, sort within that algorithm. 
 
 
     #----------Loading and saving functions----------------#
