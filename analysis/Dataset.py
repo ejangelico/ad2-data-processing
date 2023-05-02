@@ -251,7 +251,7 @@ class Dataset:
         #each pair of files is an event
         looper = tqdm(grouped_file_list, desc='Parsing waveform data from files')
         for pair in looper:
-            wave_series = pd.Series() #a series associated with the event
+            wave_series = pd.Series(dtype='object') #a series associated with the event
             #loop through each prefix, and create column names based on the prefix
             for j, pref in enumerate(self.file_prefixes):
                 #if this "file" in the pair is "None", don't file the pd.Series()
@@ -285,9 +285,9 @@ class Dataset:
                 else:
                     wave_series[pref+'1-data'] = d['1'].to_numpy() #numpy array
                 
-                
+            
             #append the event to the df
-            self.wave_df = self.wave_df.append(wave_series, ignore_index=True)
+            self.wave_df = pd.concat([self.wave_df, wave_series.to_frame().transpose()], ignore_index=True)
 
 
         #at the end, we have the full wave df
@@ -647,6 +647,26 @@ class Dataset:
             event_list = random.sample(range(nevents_loaded), nevents)
 
         return self.wave_df.loc[event_list]
+    
+
+    #get events from each prefix that occur within a specified
+    #time period. The timem period is [datetime, datetime] objects. 
+    def get_events_within_time_period(self, time_period):
+        nevents_loaded = len(self.wave_df.index)
+        if(nevents_loaded == 0):
+            print("No events loaded into the waveform DataFrame, please create_wave_df")
+            return
+        
+        outdf = pd.DataFrame()
+        for pref in self.file_prefixes:
+            mask = (time_period[0] < self.wave_df[pref+"Timestamp"]) & (self.wave_df[pref+"Timestamp"] < time_period[1])
+            outdf = pd.concat([outdf, self.wave_df[mask]])
+        
+        return outdf
+
+
+
+
 
 
     def get_time_paired_files(self):
@@ -664,7 +684,7 @@ class Dataset:
 
     #----------------------reduction functions-----------------------#
 
-    def create_reduced_df(self, config_file='default_config.yaml'):
+    def create_reduced_df(self, config_file='../configs/default_config.yaml'):
         # check whether the waveform dataframe has been populated yet
         # if not, throw an error
         if len(self.wave_df.index)==0:
@@ -714,9 +734,9 @@ class Dataset:
 
 
                 # background subtraction depending on whether scope is for anode or pmts
-                if pref=="anode":
+                if("glitch" in pref or "anode" in pref):
                     # if there's no sampling period, the event doesn't have data for this scope
-                    if np.isnan(event_series[pref+'SamplingPeriod']):
+                    if(event_series[pref+'SamplingPeriod'] is None):
 
                         reduced_series['GlitchAmplitude'] = None
                         reduced_series['AnodeAmplitude'] = None
@@ -743,10 +763,10 @@ class Dataset:
                     reduced_series['GlitchIntegral'] = integrals[0] #mV*us
                     reduced_series['AnodeIntegral'] = integrals[1] #mV*us
 
-                elif pref=="pmt":
+                elif("pmt" in pref):
 
                     # if there's no timestamp, the event doesn't have data for this scope
-                    if np.isnan(event_series[pref+'SamplingPeriod']):
+                    if(event_series[pref+'SamplingPeriod'] is None):
                         reduced_series['PMT1Amplitude'] = None
                         reduced_series['PMT2Amplitude'] = None
                         reduced_series['PMT1Peakidx'] = None
@@ -770,8 +790,8 @@ class Dataset:
                     reduced_series['PMT2Peakidx'] = peakidx[1] #index referencing event_series['Data']
                     reduced_series['PMT1Integral'] = integrals[0] #million electrons
                     reduced_series['PMT2Integral'] = integrals[1] #million electrons
-                    reduced_series['PMT1std'] = np.std(event_series['pmt0-data'])
-                    reduced_series['PMT2std'] = np.std(event_series['pmt1-data'])
+                    reduced_series['PMT1std'] = np.std(event_series[pref+'0-data'])
+                    reduced_series['PMT2std'] = np.std(event_series[pref+'1-data'])
 
             reduced_df = reduced_df.append(reduced_series, ignore_index=True)
 
@@ -790,9 +810,9 @@ class Dataset:
     def baseline_subtract_window(self,event_series,prefix):
         dt = event_series[prefix+'SamplingPeriod']# in us
         
-        if(prefix == "anode"):
+        if("anode" in prefix or "glitch" in prefix):
             window = self.config_dict["anode_baseline_window"]
-        elif(prefix == "pmt"):
+        elif("pmt" in prefix):
             window = self.config_dict["pmt_baseline_window"]
         else:
             window = self.config_dict["baseline_window"]
@@ -802,7 +822,7 @@ class Dataset:
         for chan in range(2):
             raw_data = event_series[prefix+str(chan)+'-data']
             #if this prefix/event doesnt exist, it will be nans
-            if all(np.isnan(raw_data)):
+            if(raw_data == []):
                 continue
             baseline_buffer = raw_data[min(window_indices):max(window_indices)]
             baseline = np.mean(baseline_buffer)
@@ -820,7 +840,7 @@ class Dataset:
         for chan in range(2):
             rawdata = event_series[prefix+str(chan)+'-data']
 
-            if all(np.isnan(rawdata)):
+            if(rawdata == []):
                 amps.append(None)
                 taus.append(None)
                 pidx.append(None)
@@ -832,7 +852,7 @@ class Dataset:
             maxval = max(rawdata.min(), rawdata.max(), key=abs) 
             maxidx = np.where(rawdata == maxval)[0][0]
 
-            if(prefix=="anode"):
+            if("anode" in prefix or "glitch" in prefix):
                 #if the signal is larger than the threshold, do an exponential fit. 
                 if((abs(maxval) > fit_amplitude_threshold) and False):
                     #do fit later
@@ -861,7 +881,7 @@ class Dataset:
                     taus.append(None)
                     pidx.append(maxidx) 
 
-            elif(prefix == "pmt"):
+            elif("pmt" in prefix):
                 amps.append(maxval)
                 taus.append(None)
                 pidx.append(maxidx)
@@ -871,11 +891,11 @@ class Dataset:
         for chan in range(2):
             rawdata = event_series[prefix+str(chan)+'-data']
 
-            if all(np.isnan(rawdata)):
+            if(rawdata == []):
                 integrals.append(None)
                 continue
             
-            if(prefix == "anode"):
+            if("anode" in prefix or "glitch" in prefix):
                 anode_peak = pidx[chan]
                 dt = event_series[prefix+'SamplingPeriod'] #us
                 lowidx = int(anode_peak + min(window)/dt)
@@ -884,7 +904,7 @@ class Dataset:
                 integrals.append(np.trapz(integ_data, dx=dt)) #in mV*us
 
 
-            elif(prefix == "pmt"):
+            elif("pmt" in prefix):
                 dt = event_series[prefix+'SamplingPeriod'] #us
                 lowidx = int(pidx[chan] + min(window)/dt)
                 hiidx = int(pidx[chan] + max(window)/dt) #1e3 because window in us
