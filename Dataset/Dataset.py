@@ -15,7 +15,7 @@ from tqdm.notebook import tqdm, trange
 from datetime import datetime, timedelta
 import pickle
 import yaml
-
+import glob
 
 class Dataset:
     #top_data_directory is the directory containing all of the
@@ -103,18 +103,14 @@ class Dataset:
 
         print("Looking through files in directory " + self.topdir + " and grouping based on prefix")
         #full list of .csv files
-        file_list = []
-        looper = tqdm(enumerate(os.listdir(self.topdir)))
-        #loop through all files in directory
-        for i, f in looper:
-            #find which are csvs
-            if(os.path.isfile(os.path.join(self.topdir, f)) and f.endswith('.csv')):
-                file_list.append(f)
-        
+        file_list = glob.glob(self.topdir+"*.csv")
         if(len(file_list) == 0):
             print("No data files found in directory: " + self.topdir)
             return
-        
+       
+        #turn filenames into only filenames, not with whole path
+        file_list = [_.split('/')[-1] for _ in file_list]
+
         #add prefixes to separated file lists self attribute
         self.file_prefixes = file_prefixes
         for pref in file_prefixes:
@@ -723,7 +719,7 @@ class Dataset:
         for i, event_series in looper:
             
             # create pandas series for theevent
-            reduced_series = pd.Series()
+            reduced_series = pd.Series(dtype='object')
             reduced_series['RogowskiVoltage'] = rogowski_voltage
 
 
@@ -793,7 +789,7 @@ class Dataset:
                     reduced_series['PMT1std'] = np.std(event_series[pref+'0-data'])
                     reduced_series['PMT2std'] = np.std(event_series[pref+'1-data'])
 
-            reduced_df = reduced_df.append(reduced_series, ignore_index=True)
+            reduced_df = pd.concat([reduced_df, reduced_series.to_frame().transpose()], ignore_index=True)
 
         self.reduced_df = reduced_df
         print("Done")

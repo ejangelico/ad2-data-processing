@@ -1,7 +1,7 @@
 import sys
 import os
-sys.path.append("../analysis/")
-import analysis.Dataset as Dataset
+sys.path.append("../Dataset/")
+import Dataset
 import pickle
 
 
@@ -33,16 +33,19 @@ if __name__ == "__main__":
         sys.exit()
     
     #otherwise, pickle the unreduced dataset
-    pickle_filetag = str(event_limit[0]) + "-wave_df.p"
+    pickle_filetag = topdir+str(event_limit[0]) + "-wave_df.p"
+    print("Saving " + pickle_filetag)
     pickle.dump([d.wave_df], open(pickle_filetag, "wb"))
 
     #reduce the data
     d.create_reduced_df(config_file=config)
 
-    pickle_filetag = str(event_limit[0]) + "-reduced_df.p"
+    pickle_filetag = topdir+str(event_limit[0]) + "-reduced_df.p"
+    print("Saving " + pickle_filetag)
     pickle.dump([d.reduced_df], open(pickle_filetag, "wb"))
 
-    pickle_filetag = str(event_limit[0]) + "-dataset.p"
+    pickle_filetag = topdir+str(event_limit[0]) + "-dataset.p"
+    print("Saving " + pickle_filetag)
     pickle.dump([d], open(pickle_filetag, "wb"))
 
 

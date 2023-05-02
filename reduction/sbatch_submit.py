@@ -6,7 +6,7 @@ import numpy as np
 
 
 path_to_dataset = "/p/lustre1/angelico/hv-test-chamber/Run4/cosmics-overnight/"
-date_of_dataset = "4-19-23"
+date_of_dataset = "4-18-23"
 path_to_config = path_to_dataset+"run4_config.yaml"
 jobname = "cos-ov"
 files_per_chunk = 5000 #must be integer
@@ -14,7 +14,7 @@ filelist = glob.glob(path_to_dataset+"*.csv")
 n_files = len(filelist)
 
 #estimate time needed
-t_min = files_per_chunk*5/1000 #minutes
+t_min = files_per_chunk*1/1000 #minutes
 t_min_reduced = t_min % 60
 t_hours = t_min/60
 
@@ -33,8 +33,7 @@ while True:
     cmd_full = '{} && sbatch {} --wrap=\'{}\''.format(activate_venv,cmd_options,exe)
 
     print(cmd_full)
-    #os.system(cmd_full)
+    os.system(cmd_full)
     print('job {} sumbitted'.format(str(jobcount)+jobname))
-
     filecount += files_per_chunk
     
