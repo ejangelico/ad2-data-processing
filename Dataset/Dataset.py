@@ -78,6 +78,9 @@ class Dataset:
         #where the order of files follows the order of file_prefixes
         self.time_paired_files = []
         self.date_of_dataset = None
+    
+    def test(self):
+        pass
 
     #this function will add two dataset objects together
     #preserving as much information as possible. One thing this
@@ -113,7 +116,7 @@ class Dataset:
 
         #I don't think that time sorting any of these lists is relevant at this stage,
         #so if you have an algorithm that depends on it, sort within that algorithm. 
-
+        return newd
 
     #----------Loading and saving functions----------------#
 
