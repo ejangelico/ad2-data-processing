@@ -1,0 +1,8 @@
+filter_tau: 300 #ns, filtering anode signal gaussian
+zero_amplitude_threshold: 1 #if max-sample is less than this, don't integrate
+fit_amplitude_threshold: 0.006 #if max-sample is above this, fit the exponential to get tau and amplitude
+anode_integration_window: [0, 5000] #us, skip integrating the baseline samples, just integrate this window about peak time.
+pmt_integration_window: [0.2, 1.5] #again, for fast sampling cosmics data
+anode_baseline_window: [100, 300] #us, region over which to calculate mean of baseline samples
+pmt_baseline_window: [0, 0.1] # [0, 0.1] for fast sampling of pmts (cosmics), [30, 36] for sampling during glitch detection
+rogowski_voltage: 0 
