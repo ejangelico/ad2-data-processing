@@ -1,0 +1,3 @@
+Slot,Channel,Type,Position
+0,0,pmts,0
+0,1,pmts,1
