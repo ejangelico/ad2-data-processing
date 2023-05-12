@@ -46,7 +46,7 @@ class NGMBinaryFile:
             print('Spills_list is empty... no spills found in file.')     
 
      ####################################################################
-    def GroupEventsAndWriteToHDF5( self, nevents = -1, save = False, start_stop = None ):
+    def GroupEventsAndWriteToPickle( self, nevents = -1, save = False, start_stop = None ):
           
         try:
             self.spills_list
@@ -110,19 +110,19 @@ class NGMBinaryFile:
                             channel_data['data']['events'][i]['timestamp_full'] )
                         output_dict['Data'].append( \
                             np.array(channel_data['data']['events'][i]['samples'], dtype=int) )
-                        output_dict['ChannelTypes'].append( self.channel_map['ChannelType'].loc[chan_mask].values[0] )
+                        output_dict['ChannelTypes'].append( self.channel_map['Type'].loc[chan_mask].values[0] )
                         output_dict['ChannelPositions'].append( 0. )
             
                 output_event_list.append(output_dict)
             
                 global_evt_counter += 1
                 local_evt_counter += 1
-                if local_evt_counter > 5000 and save:
-                        temp_df = pd.DataFrame( output_event_list[-5000:] )
-                        output_filename = '{}{}_{:0>3}.h5'.format( self.output_directory,\
+                if local_evt_counter > 200 and save:
+                        temp_df = pd.DataFrame( output_event_list[-200:] )
+                        output_filename = '{}{}_{:0>3}.p'.format( self.output_directory,\
                                                 self.GetFileTitle( self.filename ),\
                                                 file_counter )
-                        temp_df.to_hdf( output_filename, key='raw' )
+                        temp_df.to_pickle( output_filename, protocol=5 )
                         local_evt_counter = 0
                         file_counter += 1
                         print('Written to {} at {:4.4} seconds'.format(output_filename, time.time()-start_time))
