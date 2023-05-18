@@ -11,6 +11,7 @@ import numpy as np
 import time
 import os
 import struct
+import pickle
 
 class NGMBinaryFile:
 
@@ -122,7 +123,7 @@ class NGMBinaryFile:
                         output_filename = '{}{}_{:0>3}.p'.format( self.output_directory,\
                                                 self.GetFileTitle( self.filename ),\
                                                 file_counter )
-                        temp_df.to_pickle( output_filename, protocol=5 )
+                        pickle.dump([temp_df], open( output_filename, 'wb' ))
                         local_evt_counter = 0
                         file_counter += 1
                         print('Written to {} at {:4.4} seconds'.format(output_filename, time.time()-start_time))
@@ -510,7 +511,7 @@ class NGMBinaryFile:
     
         event['format_bits'] = 0xf & word
         event['channel_id'] = 0xff0 & word
-        event['timestamp_47_to_32'] = 0xffff0000 & word
+        event['timestamp_47_to_32'] = (0xffff0000 & word) >> 16
     
         word = struct.unpack("<I", infile.read(4))[0]
         bytes_read += 4
@@ -622,7 +623,7 @@ class NGMBinaryFile:
         # First word contains format bits, chan ID, and beginning of timestamp
         event['format_bits'] = 0xf & file_content_array[fileidx]
         event['channel_id'] = 0xff0 & file_content_array[fileidx]
-        event['timestamp_47_to_32'] = 0xffff0000 & file_content_array[fileidx]
+        event['timestamp_47_to_32'] = (0xffff0000 & file_content_array[fileidx]) >> 16
         fileidx += 1
 
         # Next word completes the timestamp
