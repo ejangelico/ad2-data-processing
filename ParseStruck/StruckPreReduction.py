@@ -17,7 +17,7 @@ def prereduce(ngmb, config_file):
 
     #consistency checks before starting. 
     #has the data at least been grouped into a dataframe from binary?
-    if( (ngmb.output_df == None) or (len(ngmb.output_df.index) == 0) ):
+    if(len(ngmb.output_df.index) == 0):
         print("**Can't pre-reduce the data from {} because it hasn't yet been loaded with NGMBinaryFile::GroupEventsAndWriteToPickle".format(ngmb.input_filename))
         print("Doing so here anyway, but make sure you approve")
         ngmb.GroupEventsAndWriteToPickle(save=False)
@@ -54,10 +54,10 @@ def prereduce(ngmb, config_file):
     #2. Continue past the event if either channel has no voltage sample above config["no_pulse_threshold"]
     print("Prereducing data...")
     bw = config["baseline_window"] #format is [sample_i, sample_f]
-    pol = config["polarity"] #will use this so that every data stream is positive. 
-    thr = config["no_pulse_threshold"]
-    mv = config["mv_per_adc"]
-    dT = 1.0/config["clock"] #seconds
+    pol = np.sign(int(config["polarity"])) #will use this so that every data stream is positive. 
+    thr = float(config["no_pulse_threshold"])
+    mv = float(config["mv_per_adc"])
+    dT = 1.0/float(config["clock"]) #seconds
     for i, row in indf.iterrows():
         vs = []
         above_thresh = []
@@ -129,7 +129,7 @@ def get_date_from_filename(ngmb, offset):
     minute = f_spl[10:12]
     sec = f_spl[12:14]
 
-    d = datetime.strptime(year4+month+day+hour+minute+sec, "%Y%m%d%H%M%S")
+    d = datetime.datetime.strptime(year4+month+day+hour+minute+sec, "%Y%m%d%H%M%S")
 
     #then the Struck code for some reason has a 7 hours offset. This is set in the config file. 
     dt = datetime.timedelta(seconds=offset)

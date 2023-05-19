@@ -22,14 +22,14 @@ if __name__ == "__main__":
     config = sys.argv[2]
     
     infiles = glob.glob(topdir+"*.bin")
-    infiles = sorted(infiles)
+    #infiles = sorted(infiles)
 
     for i, f in enumerate(infiles):
         print("Loading data from {}, file {:d} of {:d}".format(f, i, len(infiles)))
         ngmb = NGMBinaryFile.NGMBinaryFile(input_filename=f, output_directory=topdir, config_file = config)
-        ngmb.GroupEventsAndWriteToPickle(save=True)
+        ngmb.GroupEventsAndWriteToPickle(save=False)
         print("Pre-reducing the data from {}".format(f))
-        df, date = prereduce(ngmb)
+        df, date = prereduce(ngmb, config)
 
         #save at this stage the pre-reduced struck data
         pickle.dump([df, date], open(topdir+"prereduced_"+str(i)+".p", "wb"))

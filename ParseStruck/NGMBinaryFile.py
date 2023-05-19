@@ -44,7 +44,7 @@ class NGMBinaryFile:
 
         self.h5_file = None
 
-        self.output_df = None #eventually will fill with the DF that may or may not be saved to h5 or pickle. 
+        self.output_df = pd.DataFrame()  #eventually will fill with the DF that may or may not be saved to h5 or pickle. 
 
      ####################################################################
     def LoadBinaryFile( self, filename ):
