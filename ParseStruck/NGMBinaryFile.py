@@ -12,26 +12,39 @@ import time
 import os
 import struct
 import pickle
+import yaml
 
 class NGMBinaryFile:
 
     ####################################################################
-    def __init__( self, input_filename=None, output_directory=None, channel_map_file = None, start_stop = [None, None]):
+    def __init__( self, input_filename=None, output_directory=None, config_file = None, start_stop = [None, None]):
         print('NGMBinaryFile object constructed.')
         self.start_stop = start_stop
+        self.config_file = config_file
+        self.events_per_file = None #loaded during self.load_config() from config_file
         self.channel_map = None
         if output_directory is None:
             self.output_directory = './'
         else:
             self.output_directory = output_directory + '/'
 
+
+        if config_file is not None:
+            self.config_file = config_file
+            self.load_config()
+        else:
+            print("no config file provided, using default (PROBABLY WRONG!!!)")
+            self.config_file = "../configs/default_config.yaml"
+            self.load_config()
+
+        self.input_filename = input_filename
         if input_filename is not None:
             self.LoadBinaryFile( input_filename )
-        if channel_map_file is not None:
-            self.channel_map_file = channel_map_file 
-            self.load_channel_map()
+        
 
         self.h5_file = None
+
+        self.output_df = None #eventually will fill with the DF that may or may not be saved to h5 or pickle. 
 
      ####################################################################
     def LoadBinaryFile( self, filename ):
@@ -61,7 +74,7 @@ class NGMBinaryFile:
         file_counter = 0
         global_evt_counter = 0
         local_evt_counter = 0
-        df = pd.DataFrame(columns=['Channels','Timestamp','Data','ChannelTypes','ChannelPositions'])
+        df = pd.DataFrame(columns=['Channels','Timestamp','Data'])
         output_event_list = []
         start_time = time.time()
 
@@ -89,9 +102,7 @@ class NGMBinaryFile:
             for i in range(num_events):
                 output_dict = {'Channels': [],
                             'Timestamp': [],
-                            'Data': [],
-                            'ChannelTypes': [],
-                            'ChannelPositions': []}
+                            'Data': []}
                 
                 # In the binary files, the order of channels is always sequential. Meaning, the
                 # channels go in order of (slot,chan) indexed from 0.
@@ -111,15 +122,17 @@ class NGMBinaryFile:
                             channel_data['data']['events'][i]['timestamp_full'] )
                         output_dict['Data'].append( \
                             np.array(channel_data['data']['events'][i]['samples'], dtype=int) )
-                        output_dict['ChannelTypes'].append( self.channel_map['Type'].loc[chan_mask].values[0] )
-                        output_dict['ChannelPositions'].append( 0. )
             
                 output_event_list.append(output_dict)
             
                 global_evt_counter += 1
                 local_evt_counter += 1
-                if local_evt_counter > 200 and save:
-                        temp_df = pd.DataFrame( output_event_list[-200:] )
+                #usually is loaded with the channel map, but in case that had issues
+                if(self.events_per_file is None):
+                    self.events_per_file = 200
+
+                if local_evt_counter > self.events_per_file and save:
+                        temp_df = pd.DataFrame( output_event_list[-self.events_per_file:] )
                         output_filename = '{}{}_{:0>3}.p'.format( self.output_directory,\
                                                 self.GetFileTitle( self.filename ),\
                                                 file_counter )
@@ -128,18 +141,42 @@ class NGMBinaryFile:
                         file_counter += 1
                         print('Written to {} at {:4.4} seconds'.format(output_filename, time.time()-start_time))
             
-        df = pd.DataFrame(output_event_list)
-        return df 
+        self.output_df = pd.DataFrame(output_event_list)
+        return self.output_df 
 
 
      
      ####################################################################
-    def load_channel_map(self):
-        print("Loading channel map from {}".format(self.channel_map_file))
-        if(os.path.isfile(self.channel_map_file)):
-            self.channel_map = pd.read_csv(self.channel_map_file) #pandas df
+    def load_config(self):
+        print("Loading channel map from {}".format(self.config_file))
+        if(os.path.isfile(self.config_file)):
+            #safe read this yaml file
+
+            with open(self.config_file, 'r') as stream:
+                try:
+                    config = yaml.safe_load(stream)
+                except:
+                    print("Had an issue reading the config file, make sure it is a .yaml or .yml file")
+                    config = None
+                    return
+            config_ch = config["struck_reduction"]["channel_numbers"]
+            chmap_dict = {"Slot":[], "Channel":[]}
+            for key in config_ch:
+                for ch in config_ch[key]:
+                    chmap_dict["Slot"].append(key)
+                    chmap_dict["Channel"].append(ch)
+
+
+            self.channel_map = pd.DataFrame(chmap_dict)
+
+
+            #there should also be a configuration parameter for events per file
+            #for if there is saving to pickle files, it should chunkify the data.
+            if("events_per_file" in config["struck_reduction"]):
+                self.events_per_file = int(config["struck_reduction"]["events_per_file"])
+            
         else:
-            print("Couldnt... {} doesn't exist".format(self.channel_map_file))
+            print("Couldnt load configuration file... {} doesn't exist".format(self.config_file))
      
      ####################################################################
     def GetFileTitle( self, filepath ):
