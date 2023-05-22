@@ -46,7 +46,8 @@ def prereduce(ngmb, config_file):
     #However, I don't want to put Nevents x Date amount of bytes that is just a copy
     #of the date over and over again in the output_dict, so it just appears once. 
     date = get_date_from_filename(ngmb, config["timestamp_offset"])
-
+    start_of_day = date.replace(hour=0, minute=0, second=0, microsecond=0)
+    sec_after_daystart = (date - start_of_day).total_seconds()
     indf = ngmb.output_df
 
     #we are now going to loop through the dataframe and do the following:
@@ -54,6 +55,7 @@ def prereduce(ngmb, config_file):
     #2. Continue past the event if either channel has no voltage sample above config["no_pulse_threshold"]
     print("Prereducing data...")
     bw = config["baseline_window"] #format is [sample_i, sample_f]
+    phw = config["pulseheight_window"] #region where primary pulse is expected due to trigger timing. 
     pol = np.sign(int(config["polarity"])) #will use this so that every data stream is positive. 
     thr = float(config["no_pulse_threshold"])
     mv = float(config["mv_per_adc"])
@@ -67,8 +69,9 @@ def prereduce(ngmb, config_file):
             base = np.mean(v_mv[int(min(bw)):int(max(bw))])
             v_mv = v_mv - base
             v_mv = v_mv*pol 
+            pulse = v_mv[int(min(phw)):int(max(phw))]
             #check if it passes the threshold
-            if(max(v_mv) < thr):
+            if(max(pulse) < thr):
                 above_thresh.append(0)
             else:
                 above_thresh.append(1)
@@ -81,7 +84,8 @@ def prereduce(ngmb, config_file):
         output_dict["Data"].append(vs)
 
         #the nanosecond timestamp is the same for both channels in this code. 
-        output_dict["Seconds"].append(row["Timestamp"][0]*dT)
+        sec_after_file_date = row["Timestamp"][0]*dT
+        output_dict["Seconds"].append(sec_after_file_date + sec_after_daystart)
     
 
     output_df = pd.DataFrame(output_dict)
