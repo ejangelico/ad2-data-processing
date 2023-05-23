@@ -20,6 +20,8 @@ class ParseAD2:
         #load configuration
         self.config = None
         self.config_file = None
+        self.month = None
+        self.year = None
         if config_file is not None:
             self.config_file = config_file
             self.load_config()
@@ -32,12 +34,14 @@ class ParseAD2:
         if(os.path.exists(self.topdir) == False):
             print("The directory {} does not exist! Can't process AD2 files. Stopping")
             sys.exit()
-        
+       
+
+
         #data structures for holding info about raw data
         #separated_file_lists["glitch"] = [file0, file1, file2, ...]
         self.separated_file_lists = {} #indexed by string prefix
         self.separated_timestamps = {} #datetime objects from filename
-        self.file_prefixes = self.config.keys() #keys in ad2_reduction are file prefixes 
+        self.file_prefixes = list(self.config.keys()) #keys in ad2_reduction are file prefixes 
         
         self.ouptut_df = pd.DataFrame()
 
@@ -45,7 +49,7 @@ class ParseAD2:
     #mergable and matches with Struck dataframe. 
     def prereduce_data(self):
         #check to see if file names have been loaded
-        if(len(list(self.separated_file_lists.keys()) == 0)):
+        if(len(list(self.separated_file_lists.keys())) == 0):
             print("No file names were loaded yet using load_filenames, so will do that now.")
             self.load_filenames()
         
@@ -83,7 +87,7 @@ class ParseAD2:
             for i, f in enumerate(self.separated_file_lists[pref]):
                 timestamp = self.separated_timestamps[pref][i]
                 output_dict["Seconds"].append((timestamp - start_of_day).total_seconds())
-                output_dict["dT"].append(f) #sampling period in seconds
+                output_dict["dT"].append(self.get_sampling_period_from_file(f)) #sampling period in seconds
 
                 #load the csv data 
                 csv_data = np.genfromtxt(self.topdir + f, delimiter=',',  skip_header=20, dtype=float)
@@ -100,7 +104,7 @@ class ParseAD2:
                     temp_data.append(v_mv)
 
                 output_dict["Data"].append(temp_data)
-                output_dict["Channel"].append(sw_chs)
+                output_dict["Channels"].append(sw_chs)
 
         self.output_df = pd.DataFrame(output_dict)
         return self.output_df, date
@@ -178,6 +182,8 @@ class ParseAD2:
                 except:
                     print("Had an issue reading the config file, make sure it is a .yaml or .yml file")
                     return None
+            self.month = config["month"]
+            self.year = config["year"]
             self.config = config["ad2_reduction"]
             
         else:
@@ -197,19 +203,19 @@ class ParseAD2:
     def get_timestamp_from_filename(self, filename):
         timedotted = self.get_str_timestamp_from_filename(filename)
         #cant use the "%d" flag twice, remove from dataset_date
-        monthyear = config["month"] + "-" + config["year"]
+        monthyear = self.month + "-" + self.year
         date_format = "%m-%Y %d.%H.%M.%S.%f"
         try:
-            date = datetime.strptime(monthyear + " " + timedotted, date_format)
+            date = datetime.datetime.strptime(monthyear + " " + timedotted, date_format)
         except:
             #in some cases, the filename may not have a timestamp. in this case, return current time
-            date = datetime.now()
+            date = datetime.datetime.now()
         return date
 
     #takes a datetime as input and creates a filename
     def get_filename_from_timestamp(self, stamp, file_prefix):
         date_format = "%d.%H.%M.%S.%f"
-        fn = datetime.strftime(stamp, date_format)
+        fn = datetime.datetime.strftime(stamp, date_format)
         fn = file_prefix+fn[:-3]+".csv" #:-3 is because it returns %f in milliseconds
         return fn
 
@@ -220,7 +226,7 @@ class ParseAD2:
     #gets the sampling period from file header in seconds
     def get_sampling_period_from_file(self, filename):
         #parse header for the timestep
-        f = open(filename, 'r', errors='ignore')
+        f = open(self.topdir+filename, 'r', errors='ignore')
         ls = f.readlines()
         raw_sample_rate = ls[4]
         raw_sample_rate = raw_sample_rate.split(' ')[-1]
