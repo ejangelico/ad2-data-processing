@@ -1,3 +1,6 @@
+#####THIS IS LEGACY CODE at the moment, holding onto it as a build a replacement###############
+
+
 import os
 import numpy as np
 import time

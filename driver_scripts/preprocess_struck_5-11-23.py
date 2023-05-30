@@ -9,7 +9,14 @@ import pickle
 import pandas as pd
 
 
+#This submission script pre-reduces the struck data and batches
+#events by binary file by default. The result will be a bunch of
+#pickle files with the filename date and dataframe with waveform data
+#in the same directory as the binary data. 
 
+#The objective is then to do the same thing with the AD2 data and merge
+#the resulting dataframes. This can be found in the full-pre-reduction driver
+#script, preprocess_datadir.py 
 
 if __name__ == "__main__":
 
