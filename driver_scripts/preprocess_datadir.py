@@ -9,19 +9,7 @@ from StruckPreReduction import prereduce
 import glob
 import pickle
 import pandas as pd
-import yaml
 
-
-def load_config(infile):
-    #safe read this yaml file
-    with open(infile, 'r') as stream:
-        try:
-            config = yaml.safe_load(stream)
-        except:
-            print("Had an issue reading the config file, make sure it is a .yaml or .yml file")
-            return None
-        
-    return config
 
 #This submission script is meant to preprocess all 
 #data, both struck and AD2 data, in a single data directory. 
@@ -52,7 +40,6 @@ if __name__ == "__main__":
 
         #save at this stage the pre-reduced struck data
         pickle.dump([df, date], open(struckdir+"prereduced_"+str(i)+".p", "wb"))
-        break
 
     print("Pre-processing AD2 data")
 

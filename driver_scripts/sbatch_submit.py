@@ -27,5 +27,4 @@ for ds in datasets:
     print('job {} sumbitted'.format(str(jobcount)+jobname))
 
     jobcount += 1
-    break
     
