@@ -52,6 +52,7 @@ if __name__ == "__main__":
 
         #save at this stage the pre-reduced struck data
         pickle.dump([df, date], open(struckdir+"prereduced_"+str(i)+".p", "wb"))
+        break
 
     print("Pre-processing AD2 data")
 
