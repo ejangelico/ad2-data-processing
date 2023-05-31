@@ -38,6 +38,8 @@ struck_reduction:
 ramp_name: "ramp.txt"
 g_events_name: "g_events.txt"
 struck_folder: "struck/"
+rog_gap: 0.285 #cm, gap between rogowskis nominally. 
 
 month: "5" #for a stupid reason, I can't put the month or year into the AD2 datafile names and its needed for good date parsing. 
 year: "2023"
+
