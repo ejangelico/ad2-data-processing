@@ -102,6 +102,9 @@ class Dataset:
         #load the g_events data, if it exists
         if(os.path.isfile(self.topdir+self.config["g_events_name"])):
             d = np.genfromtxt(self.topdir+self.config["g_events_name"], delimiter=',', dtype=float)
+            #there is a silly thing with genfromtxt where if its a 1 line file, it makes a 1D array instead of the usual
+            #2D array. This line forces it into a 2D array so the other lines don't need some other if statement. 
+            if(len(d.shape) == 1): d = np.array([d])
             ts = d[:,0] #seconds since that epoch above
             ts = [datetime.timedelta(seconds=_) + ad2_epoch for _ in ts] #datetime objects
             v_mon = np.array(d[:,1])*dac_conv
@@ -196,22 +199,28 @@ class Dataset:
         #looping through all of the PMT files, extracting the timing info, 
         #sorting things in time order. 
         print("Extracting timing info from PMT files...")
-        allts = []
+        allts = [] #seconds since epoch
+        allts_dt = [] #datetime version
         for i, f in enumerate(self.struck_files):
             print("{:d} of {:d}".format(i, len(self.struck_files)), end='\r')
             df, date = pickle.load(open(f, "rb"))
+            start_of_day = date.replace(hour=0, minute=0, second=0, microsecond=0)
             ts = list(df["Seconds"])
-            ts = [date + datetime.timedelta(seconds=_) for _ in ts] #now a datetime object
-            allts = allts + ts
+            ts_dt = [start_of_day + datetime.timedelta(seconds=_) for _ in ts]
+            allts_dt = allts_dt + ts_dt 
+            allts = [(_ - datetime.datetime(1970, 1, 1)).total_seconds() for _ in allts_dt]
         print("Binning in time to get rate")
-        bins = np.arange(min(allts), max(allts), datetime.timedelta(seconds=binwidth))
+        bins = np.arange(min(allts), max(allts), binwidth)
         n, bin_edges = np.histogram(allts, bins=bins)
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+        #convert to datetimes for synchronization purposes
+        bin_centers = [datetime.datetime(1970,1,1) + datetime.timedelta(seconds=_) for _ in bin_centers]
 
         #convert to Hz. 
         n = np.array(n)/binwidth
 
-        return bin_centers, n #seconds, Hz
+        return np.array(bin_centers), np.array(n) #seconds, Hz
 
     #same as get rate curves, but
     #critically, this function is specific to identifying instantaneous rate
@@ -222,28 +231,28 @@ class Dataset:
         pmt_times, rate = self.get_rate_curves(binwidth)
 
         for i in range(len(self.ramps)):
-            idx_0, idx_1, times = self.find_sublist_within_bounds(pmt_times, min(self.ramps[i]["t"]), max(self.ramps[i]["t"]))
-            #there is a chance that idx_0 and idx_1 are equal, i.e. there are no rates data within the ramp. 
+            if(len(self.ramps[i]["t"]) == 0): continue
+            mask, times = self.find_sublist_within_bounds(pmt_times, min(self.ramps[i]["t"]), max(self.ramps[i]["t"]))
 
             #create new keys in the ramps data for the matching PMT rates
-            self.ramps[i]["pmt_rates"] = rate[idx_0:idx_1]
+            self.ramps[i]["pmt_rates"] = rate[mask]
             self.ramps[i]["pmt_times"] = times
 
         for i in range(len(self.flat_tops)):
-            idx_0, idx_1, times = self.find_sublist_within_bounds(pmt_times, min(self.flat_tops[i]["t"]), max(self.flat_tops[i]["t"]))
-            #there is a chance that idx_0 and idx_1 are equal, i.e. there are no rates data within the ramp. 
+            if(len(self.flat_tops[i]["t"]) == 0): continue
+            mask, times = self.find_sublist_within_bounds(pmt_times, min(self.flat_tops[i]["t"]), max(self.flat_tops[i]["t"]))
 
             #create new keys in the ramps data for the matching PMT rates
-            self.flat_tops[i]["pmt_rates"] = rate[idx_0:idx_1]
+            self.flat_tops[i]["pmt_rates"] = rate[mask]
             self.flat_tops[i]["pmt_times"] = times
 
-    #supposedly computationally efficient way of finding a sublist
+        return pmt_times, rate
+
+    #finding a sublist
     #between two time brounds (chronologically ordered) with list 
     #chronological as well. 
     def find_sublist_within_bounds(self, lst, t0, t1):
-        # Find the start index using binary search
-        start = next(i for i, dt in enumerate(lst) if dt >= t0)
-        # Find the end index using binary search
-        end = next(i for i, dt in enumerate(lst) if dt > t1) - 1
-        return start, end+1, lst[start: end+1]
+        lst = np.array(lst)
+        mask = np.where((lst >= t0) & (lst <= t1))
+        return mask, lst[mask]
 
