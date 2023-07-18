@@ -1,18 +1,16 @@
+#####THIS IS LEGACY CODE at the moment, holding onto it as a build a replacement###############
+
+
 import os
-import sys
 import numpy as np
 import time
-import matplotlib
 import matplotlib.pyplot as plt 
-from scipy import signal
 import random
 import pandas as pd
 from scipy.ndimage import gaussian_filter
 from scipy.optimize import curve_fit
-from pathlib import Path
-import shutil
 from tqdm.notebook import tqdm, trange
-from datetime import datetime, timedelta
+from datetime import datetime
 import pickle
 import yaml
 import glob
