@@ -56,13 +56,14 @@ class ParseAD2:
         #this is the dictionary of lists that will form an output
         #pandas dataframe that can be merged with the Struck data prior to
         #reduction. 
-        #"Seconds": number of seconds after the date in the filename when trigger occurred, with nanosecond precision (9 decimals)
+        #"Seconds": number of seconds since UNIX EPOCH 00:00 UTC Jan 1, 1970. 
+        #when trigger occurred. "Nanoseconds": is nanoseconds after that second marker. 
         #On a 64 bit computer, we can store a number such as 86399.123456789 which is in the last second of the day.  
         #"Data" all channels are always digitized, "Data": [[v0, v1, v2, ...], [v0, v1, v2, ...]], one voltage stream for each channel. 
         #"Channels" is the software ID channel number in that event. This matches prefix with some
         # software ID, which will help distinguish the types of detectors when merging.  
         #"dT" is the sampling time in that event, which may be dynamic on an event by event basis. 
-        output_dict = {"Seconds": [], "Data": [], "Channels": [], "dT": []}
+        output_dict = {"Seconds": [], "Nanoseconds": [], "Data": [], "Channels": [], "dT": []}
 
         #the date, 2023-5-10 17:00:41 for example, will be passed in the pickle file 
         #so that it can be stored during merging of the two digitization dataframes. 
@@ -71,7 +72,6 @@ class ParseAD2:
         #Do this for the first event in the file list, save the date, and then
         #the seconds after 00:00:00 that day are in output_dict for each event. 
         date = self.separated_timestamps[self.file_prefixes[0]][0] #first timestamp of first prefix. 
-        start_of_day = date.replace(hour=0, minute=0, second=0, microsecond=0)
 
         #for each prefix, process the data into the output_dict, and associate a channel ID. 
         for pref in self.file_prefixes:
@@ -85,8 +85,11 @@ class ParseAD2:
                 sys.exit()
 
             for i, f in enumerate(self.separated_file_lists[pref]):
-                timestamp = self.separated_timestamps[pref][i]
-                output_dict["Seconds"].append((timestamp - start_of_day).total_seconds())
+                timestamp = self.separated_timestamps[pref][i] #datetime object containing up to ms precision. 
+                seconds_since_epoch = np.floor(timestamp.timestamp()) #floor to ignore microsecond precision. 
+                nanoseconds = (timestamp.microsecond)*1e3 #nanosecond
+                output_dict["Seconds"].append(seconds_since_epoch)
+                output_dict["Nanoseconds"].append(nanoseconds)
                 output_dict["dT"].append(self.get_sampling_period_from_file(f)) #sampling period in seconds
 
                 #load the csv data 

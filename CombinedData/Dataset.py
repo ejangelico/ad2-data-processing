@@ -204,18 +204,18 @@ class Dataset:
         for i, f in enumerate(self.struck_files):
             print("{:d} of {:d}".format(i, len(self.struck_files)), end='\r')
             df, date = pickle.load(open(f, "rb"))
-            start_of_day = date.replace(hour=0, minute=0, second=0, microsecond=0)
             ts = list(df["Seconds"])
-            ts_dt = [start_of_day + datetime.timedelta(seconds=_) for _ in ts]
+            ts_musec = np.array(list(df["Nanoseconds"])) / 1000 #microseconds
+            ts_dt = [datetime.fromtimestamp(ts[_]) + datetime.timedelta(microseconds=ts_musec[_]) for _ in range(len(ts))]
             allts_dt = allts_dt + ts_dt 
-            allts = [(_ - datetime.datetime(1970, 1, 1)).total_seconds() for _ in allts_dt]
+            allts = allts + [ts[_] + ts_musec[_]/1e6 for _ in range(len(ts))]
         print("Binning in time to get rate")
         bins = np.arange(min(allts), max(allts), binwidth)
         n, bin_edges = np.histogram(allts, bins=bins)
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
         #convert to datetimes for synchronization purposes
-        bin_centers = [datetime.datetime(1970,1,1) + datetime.timedelta(seconds=_) for _ in bin_centers]
+        bin_centers = [datetime.fromtimestamp(_) for _ in bin_centers]
 
         #convert to Hz. 
         n = np.array(n)/binwidth

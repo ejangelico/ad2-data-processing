@@ -5,7 +5,7 @@ sys.path.append("../ParseStruck/")
 sys.path.append("../ParseAD2/")
 import NGMBinaryFile
 import ParseAD2
-from StruckPreReduction import prereduce
+from StruckPreReduction import prereduce, get_times_from_readthread
 import glob
 import pickle
 import pandas as pd
@@ -26,17 +26,22 @@ if __name__ == "__main__":
     topdir = sys.argv[1]
     struckdir = sys.argv[1]+"/struck/"
     config = sys.argv[2]
+    readthread = "sisreadthread.log" #assumed in the same folder as /struck/ files. 
     
     infiles = glob.glob(struckdir+"*.bin")
     infiles = sorted(infiles)
 
     print("Pre-processing struck data")
+    #process the readthread logfile to get nanosecond timestamps
+    #of when clocks were reset for file-runs. 
+    readthread_stamps = get_times_from_readthread(struckdir+readthread)
+
     for i, f in enumerate(infiles):
         print("Loading data from {}, file {:d} of {:d}".format(f, i, len(infiles)))
         ngmb = NGMBinaryFile.NGMBinaryFile(input_filename=f, output_directory=struckdir, config_file = config)
         ngmb.GroupEventsAndWriteToPickle(save=False)
         print("Pre-reducing the data from {}".format(f))
-        df, date = prereduce(ngmb, config)
+        df, date = prereduce(ngmb, config, readthread_stamps)
 
         #save at this stage the pre-reduced struck data
         pickle.dump([df, date], open(struckdir+"prereduced_"+str(i)+".p", "wb"))
