@@ -206,7 +206,7 @@ class Dataset:
             df, date = pickle.load(open(f, "rb"))
             ts = list(df["Seconds"])
             ts_musec = np.array(list(df["Nanoseconds"])) / 1000 #microseconds
-            ts_dt = [datetime.fromtimestamp(ts[_]) + datetime.timedelta(microseconds=ts_musec[_]) for _ in range(len(ts))]
+            ts_dt = [datetime.datetime.fromtimestamp(ts[_]) + datetime.timedelta(microseconds=ts_musec[_]) for _ in range(len(ts))]
             allts_dt = allts_dt + ts_dt 
             allts = allts + [ts[_] + ts_musec[_]/1e6 for _ in range(len(ts))]
         print("Binning in time to get rate")
@@ -215,7 +215,7 @@ class Dataset:
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
         #convert to datetimes for synchronization purposes
-        bin_centers = [datetime.fromtimestamp(_) for _ in bin_centers]
+        bin_centers = [datetime.datetime.fromtimestamp(_) for _ in bin_centers]
 
         #convert to Hz. 
         n = np.array(n)/binwidth

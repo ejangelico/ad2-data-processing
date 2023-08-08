@@ -3,13 +3,12 @@ import os
 
 
 #make a list of datasets to submit
-topdir = "/p/lustre2/nexouser/data/StanfordData/angelico/hv-test-chamber/Run5/"
-datasets = ["cosmics-5-3/", "ds03/", "ds04/", "ds05/", "ds06/", \
-            "ds07/","ds08/","ds09/","ds10/","ds11/","ds12/","ds13/","ds14/","ds15/","ds16/",\
-            "ds17/","ds18/","ds19/","ds20/","ds21/","ds22/","ds23/","ds24/","ds25/"]
+topdir = "/p/lustre2/nexouser/data/StanfordData/angelico/hv-test-chamber/Run7/"
+datasets = ["cosmics-endofrun/", "ds01/","ds02/","ds03/", "ds04/","ds05/","ds06/","ds07/",\
+        "ds08/","ds09/","ds10/","ds11/","filling/", "room-temp-dark-noise/"]
 
-path_to_config = "/g/g15/angelico/ad2-data-processing/configs/run5_config.yaml"
-jobname = "-run5"
+path_to_config = "/g/g15/angelico/ad2-data-processing/configs/run7_config.yaml"
+jobname = "-run7"
 
 
 activate_venv = 'source $HOME/my_personal_env/bin/activate'

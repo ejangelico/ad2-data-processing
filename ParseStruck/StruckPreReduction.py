@@ -48,12 +48,12 @@ def prereduce(ngmb, config_file, readthread_stamps):
     closest_index = min(range(len(readthread_stamps)), key=lambda i: abs(readthread_stamps[i]['Seconds'] - date.timestamp()))
     #catch a GROSS error where the readthreadlog is super stale, greater than 100 seconds
     tcatch = 100 #seconds
-    if(np.abs(reathread_stamps[closest_index]["Seconds"] - date.timestamp()) > tcatch):
+    if(np.abs(readthread_stamps[closest_index]["Seconds"] - date.timestamp()) > tcatch):
         print("ERROR!: sisreadthread.log is over 100 seconds stale, and you may not have kept it organized in data handling!")
 
-    file_seconds = reathread_stamps[closest_index]["Seconds"]
+    file_seconds = readthread_stamps[closest_index]["Seconds"]
     file_seconds = file_seconds + config["timestamp_offset"] #correct for GMT to PST timezone
-    file_nsec = reathread_stamps[closest_index]["Nanoseconds"]
+    file_nsec = readthread_stamps[closest_index]["Nanoseconds"]
 
     indf = ngmb.output_df
 
@@ -181,9 +181,9 @@ def get_times_from_readthread(readthread):
             date_byte = l.split(' ')[3:8]
             date_str = ' '.join(date_byte)
             date_format = "%a, %d %b %Y %H:%M:%S"
-            ts_datetime = datetime.strptime(date_str, date_format)
+            ts_datetime = datetime.datetime.strptime(date_str, date_format)
             output.append({"Seconds":ts_datetime.timestamp(), "Nanoseconds":nsec})
-
+    return output
 
 
 
