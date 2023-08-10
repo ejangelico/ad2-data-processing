@@ -42,6 +42,10 @@ if __name__ == "__main__":
         ngmb.GroupEventsAndWriteToPickle(save=False)
         print("Pre-reducing the data from {}".format(f))
         df, date = prereduce(ngmb, config, readthread_stamps)
+        if(len(df.index) == 0):
+            print("No events found in the struck prereduction of file {}".format(f))
+            print("Not going to pickel it.")
+            continue
 
         #save at this stage the pre-reduced struck data
         pickle.dump([df, date], open(struckdir+"prereduced_"+str(i)+".p", "wb"))

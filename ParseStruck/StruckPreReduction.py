@@ -23,6 +23,11 @@ def prereduce(ngmb, config_file, readthread_stamps):
         ngmb.GroupEventsAndWriteToPickle(save=False)
         print("Done, moving on to prereduction")
 
+    #check again, if it still is, then we have a bigger issue and need to return nothing
+    if(len(ngmb.output_df.index) == 0):
+        print("Still no data in the NGMB object, so this file maybe didn't have any events. Continuing on without it. ")
+        return pd.DataFrame(), None #the prereduce script will catch an empty dataframe. 
+
 
     config = load_config(config_file)
     if(config == None):
@@ -177,7 +182,12 @@ def get_times_from_readthread(readthread):
     output = []
     for l in lines:
         if("After" in l[:10]):
-            nsec = float(l.split('+')[-1].split(' ')[0])
+            try:
+                nsec = float(l.split('+')[-1].split(' ')[0])
+            except:
+                #wierd thing I've only seen once in one line on one dataset, there is a space
+                #between the + and the nanosecond int. 
+                nsec = float(l.split('+')[-1].split(' ')[1])
             date_byte = l.split(' ')[3:8]
             date_str = ' '.join(date_byte)
             date_format = "%a, %d %b %Y %H:%M:%S"
