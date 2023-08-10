@@ -119,6 +119,9 @@ class Dataset:
     #this function takes the flat, 1D data of HV ramp info and separates
     #it into indexable ramps and flat tops. 
     def identify_ramps(self):
+        if(self.ramp_data == {}):
+            print("No ramp data in this dataset")
+            return
         ts = self.ramp_data["t"]
         vs = self.ramp_data["v_app"]
         #this is not measured data, rather is applied data, so everything is digitally generated and smooth. 
