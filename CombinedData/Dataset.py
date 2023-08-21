@@ -63,11 +63,9 @@ class Dataset:
     #what HV is applied at what time, and what time/HV trip signals are received. 
     def load_hv_textfiles(self):
 
-        #unfortunately, as of Run5 and Run6, two supplies were used for different datasets
-        #and this changes the conversion from v_dac to HV applied. Will become vestigial in the future
-        #but I'm putting a single file in the topdir that indicates that conversion, i.e. whether it was
-        #the glassman or the SRS supply for that dataset, as I was not smart enough to encode that info
-        #in the ramp file. 
+        #we have a few different HV supplies used for different voltage ranges.
+        #This conversion text file just has a single text floating point in it
+        #that represents the DAC to kV conversion factor. 
         if(os.path.isfile(self.topdir+"dac_conversion.txt")):
             temp = open(self.topdir+"dac_conversion.txt", "r")
             l = temp.readlines()[0]
@@ -92,8 +90,8 @@ class Dataset:
             v_app = v_dac*dac_conv
             self.ramp_data["t"] = ts
             self.ramp_data["v_app"] = v_app
-            self.ramp_data["e_app"] = v_app/self.config["rog_gap"] #converting to assumed electric field in kV/cm
-            self.ramp_data["v_mon"] = v_mon*dac_conv
+            self.ramp_data["v_mon"] = v_mon*dac_conv #THIS is the more accurate voltage being applied, not v_app. See calibration folder of 40 kV glassman supply. 
+            self.ramp_data["e_app"] = self.ramp_data["vmon"]/self.config["rog_gap"] #converting to assumed electric field in kV/cm
             self.ramp_data["c_mon"] = c_mon
 
         else:

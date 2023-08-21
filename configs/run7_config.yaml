@@ -5,14 +5,14 @@ ad2_reduction:
   #note some important differences: the sample rate and timing of the event changes on an event by event basis
   #if the settings change during data logging (which sometimes happens). They are parsed in the header of the file. 
   "glitch": #file prefix before timestamp
-    software_channels: [2] #this is a software defined number, can be anything but sets flags in the analysis. 
-    active_channels: [1] #two channels on an AD2, [0, 1]. Put which ones you want parsed. 
+    software_channels: [2, 3] #this is a software defined number, can be anything but sets flags in the analysis. 
+    active_channels: [1, 0] #two channels on an AD2, [0, 1]. Put which ones you want parsed. 
     filter_tau: 0 #ns, filtering anode signal gaussian, 0 for no filtering
     polarity: -1 #expecting negative pulses 
     no_pulse_threshold: 0 #if max-sample is less than this, don't integrate
     fit_amplitude_threshold: 0.005 #if max-sample is above this, fit the exponential to get tau and amplitude
     integration_window: [0, 1000] #us, skip integrating the baseline samples, just integrate this window about peak time.
-    baseline_window: [300, 400] #samples, region over which to calculate mean of baseline 
+    baseline_window: [0, 400] #samples, region over which to calculate mean of baseline 
 
 
 
@@ -38,7 +38,7 @@ struck_reduction:
 ramp_name: "ramp.txt"
 g_events_name: "g_events.txt"
 struck_folder: "struck/"
-rog_gap: 0.285 #cm, gap between rogowskis nominally. 
+rog_gap: 0.285 #cm, gap between rogowskis nominally.
 
 month: "7" #for a stupid reason, I can't put the month or year into the AD2 datafile names and its needed for good date parsing. 
 year: "2023"
