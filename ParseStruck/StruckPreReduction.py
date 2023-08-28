@@ -13,6 +13,7 @@ import yaml
 #3. Deletes empty events, i.e. bugginess if both channels have no amplitude relative to baseline. 
 
 #takes an NGMBinaryFile object, checks that the dataframe has been formed. 
+
 def prereduce(ngmb, config_file, readthread_stamps):
 
     #consistency checks before starting. 

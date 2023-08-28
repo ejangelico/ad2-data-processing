@@ -1,0 +1,98 @@
+# To check more avaialble options see:
+# https://matplotlib.org/tutorials/introductory/customizing.html
+
+
+# default seaborn aesthetic
+# darkgrid + deep palette + notebook context
+
+
+
+# AXES
+axes.titlesize : 16
+axes.labelsize : 18
+axes.spines.top : False
+axes.spines.right : False
+axes.spines.bottom : True
+axes.spines.left : True
+axes.edgecolor: white
+axes.facecolor: EAEAF2
+axes.labelcolor: .15
+axes.linewidth: 0
+axes.labelpad: 0.0
+
+
+# GRID
+axes.grid : True
+grid.alpha : 0.7
+grid.color: white
+grid.linestyle: -
+grid.linewidth: 1
+
+# LINES
+axes.prop_cycle: cycler('color', ['0072B2', '009E73', 'D55E00', 'CC79A7', 'F0E442', '56B4E9'])
+patch.facecolor: 0072B2
+patch.linewidth: 1.0
+patch.force_edgecolor  : True
+patch.edgecolor        : k
+lines.linewidth: 2
+lines.markeredgewidth: 0
+lines.markersize: 4
+lines.solid_capstyle: round
+
+
+
+# SCATTER PLOT
+scatter.marker : .
+
+
+#LEGEND
+legend.fontsize: 16
+legend.frameon: False
+legend.numpoints: 1
+legend.scatterpoints: 1
+
+
+
+# TICKS
+xtick.color: .15
+xtick.direction: out
+xtick.labelsize: 15
+xtick.minor.visible: True
+xtick.major.size: 14
+xtick.minor.size: 7
+xtick.major.width: 2
+xtick.minor.width: 1
+
+ytick.color: .15
+ytick.direction: out
+ytick.labelsize: 15
+ytick.minor.visible: True
+ytick.major.size: 14
+ytick.minor.size: 7
+ytick.major.width: 2
+ytick.minor.width: 1
+
+
+#HISTOGRAM
+hist.bins: 100 #default number of bins. 
+hatch.color            : k
+hatch.linewidth        : 1.0
+
+# FIGURE OUTPUT 
+figure.figsize  : 3, 2
+#figure.dpi : 150
+#savefig.dpi : 150
+figure.facecolor: white
+
+
+#FONTS 
+text.color: .15
+font.family: sans-serif
+font.sans-serif: Arial, Liberation Sans, DejaVu Sans, Bitstream Vera Sans, sans-serif
+
+
+#IMAGE
+image.cmap: Greys
+
+
+
