@@ -1,6 +1,5 @@
 import sys
 import os
-sys.path.append("../Dataset/")
 sys.path.append("../ParseStruck/")
 sys.path.append("../ParseAD2/")
 import NGMBinaryFile

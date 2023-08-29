@@ -1,6 +1,6 @@
 import sys
 import os
-sys.path.append("../Dataset/")
+sys.path.append("../CombinedData/")
 import Dataset
 import glob
 import pickle
