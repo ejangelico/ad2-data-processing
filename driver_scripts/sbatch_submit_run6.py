@@ -4,7 +4,7 @@ import os
 
 #make a list of datasets to submit
 topdir = "/p/lustre2/nexouser/data/StanfordData/angelico/hv-test-chamber/Run6/"
-datasets = []
+datasets = ["ds01/", "ds02/","ds03/","ds04/","ds05/"]
 
 path_to_config = "/g/g15/angelico/ad2-data-processing/configs/run6_config.yaml"
 jobname = "-run6"

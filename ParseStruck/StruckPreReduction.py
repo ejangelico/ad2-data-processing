@@ -97,7 +97,12 @@ def prereduce(ngmb, config_file, readthread_stamps):
         output_dict["Data"].append(vs)
 
         #the nanosecond timestamp is the same for both channels in this code, so take 0th chan.  
-        clock_sec_after_file_date = row["Timestamp"][0]*dT #seconds, with nanosecond precision. 
+
+        #this try except catches a strange case where there are no events?
+        try:
+            clock_sec_after_file_date = row["Timestamp"][0]*dT #seconds, with nanosecond precision. 
+        except:
+            continue
         clock_nsec_after_file_date = (clock_sec_after_file_date - np.floor(clock_sec_after_file_date))*1e9 #just part after decimal. 
         clock_sec_after_file_date = np.floor(clock_sec_after_file_date) #just isolate 1 second precision part. 
 
