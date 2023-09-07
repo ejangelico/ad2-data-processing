@@ -128,7 +128,8 @@ class Dataset:
             dac_conv = 0.5 #use SRS value for the 5 kV supply
 
 
-        ad2_epoch = datetime.datetime(1969, 12, 31, 17,0,0)
+        #ad2_epoch = datetime.datetime(1969, 12, 31, 17,0,0)
+        ad2_epoch = datetime.datetime(1970, 1, 1, 0,0,0)
         
         if(os.path.isfile(self.topdir+self.config["ramp_name"])):
             #load the rampfile data
@@ -315,6 +316,8 @@ class Dataset:
     #Performs some corrections for when the nearest
     #HV log point is farther than 2 seconds
     def get_hv_at_time(self, t):    
+        if(self.ramp_data == {}):
+            return None
         dt = datetime.datetime.fromtimestamp(t) #cast as datetime to match our ramp_data.
 
         out_of_bounds = 2 #seconds to perform a different alg to determine HV log points. 
@@ -328,6 +331,8 @@ class Dataset:
             return self.ramp_data["v_mon"][cl_idx]
 
     def get_field_for_hv(self, kv):
+        if(kv == None):
+            return None
         return kv/self.config["rog_gap"] #kV/cm
 
     #finding a sublist
@@ -495,7 +500,7 @@ class Dataset:
             try:
                 v = np.array(row["Data"][hw_ch])
             except:
-                continue #remove this try except when reprocessing the data with both charge channels included. 
+                continue 
             ts = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
             v_sm = gaussian_filter(v, t_smooth/(dT*1e6))
             peaks, _ = scipy.signal.find_peaks(v_sm, distance=int(t_space/(dT*1e6)), height=amp_thr)
@@ -557,7 +562,7 @@ class Dataset:
             try:
                 v = np.array(row["Data"][hw_ch])
             except: 
-                continue #remove this try except when reprocessing the data with both charge channels included. 
+                continue 
             ts = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
 
             #find the abs-max sample and the sign of that sample. 
@@ -634,9 +639,12 @@ class Dataset:
             output["ch{:d} charge".format(sw_ch)] = reco_charge
             #if you assume C = 20 pF for the rogowski, then this charge has deposited
             #some quantity of energy, equal to dU = Q(dQ)/C in Joules
-            fullQ = rog_cap*kv*1000 #V*pF = pC
-            dU = reco_charge*fullQ/rog_cap/1000 #pC*pC/pF = pJ, most are on order nJ hence factor of 1000
-            output["ch{:d} energy".format(sw_ch)] = dU
+            if(kv != None):
+                fullQ = rog_cap*kv*1000 #V*pF = pC
+                dU = reco_charge*fullQ/rog_cap/1000 #pC*pC/pF = pJ, most are on order nJ hence factor of 1000
+                output["ch{:d} energy".format(sw_ch)] = dU
+            else:
+                output["ch{:d} energy".format(sw_ch)] = None
 
             output["ch{:d} evidx".format(sw_ch)] = row.name
 
@@ -667,7 +675,7 @@ class Dataset:
             output["ch{:d} postbaseline".format(sw_ch)] = np.mean(v[-1*bl_window[1]:]) 
 
             #hv and timing
-            kv = self.get_hv_at_time(row["Seconds"])
+            kv = self.get_hv_at_time(row["Seconds"]) #returns None if no ramp data 
             output["ch{:d} hv".format(sw_ch)] = kv 
             output["ch{:d} field".format(sw_ch)] = self.get_field_for_hv(kv)
             output["ch{:d} seconds".format(sw_ch)] = row["Seconds"]

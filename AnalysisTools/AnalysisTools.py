@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import pickle
 import os
 import yaml
+import pandas as pd
 
 
 class AnalysisTools:
@@ -19,6 +20,12 @@ class AnalysisTools:
         self.config_file = config_file
         self.config = {}
         self.load_config()
+
+        self.ad2_chmap = {}
+        self.struck_chmap = {}
+        self.load_chmaps()
+
+        self.all_sw_chs = list(self.ad2_chmap.keys()) + list(self.struck_chmap.keys())
 
     #reloads the df object from the pickle file
     def load_dataframe(self):
@@ -37,6 +44,15 @@ class AnalysisTools:
                     return None
         else:
             print("Couldnt load configuration file... {} doesn't exist".format(self.config_file))
+
+    def load_chmaps(self):
+        for ad2 in self.config["ad2_reduction"]:
+            for i, sw_ch in enumerate(self.config["ad2_reduction"][ad2]["software_channels"]):
+                #for saving these software channels for easier access
+                self.ad2_chmap[sw_ch] = self.config["ad2_reduction"][ad2]["active_channels"][i]
+        for card in self.config["struck_reduction"]["software_channels"]:
+            for i, sw_ch in enumerate(self.config["struck_reduction"]["software_channels"][card]):
+                self.struck_chmap[sw_ch] = self.config["struck_reduction"]["active_channels"][card][i]
 
     #this will get waveforms, from their waveform
     #level pre-reduced files, that pass a mask
@@ -60,5 +76,30 @@ class AnalysisTools:
         return output_events
     
     
+    #takes a dataframe that is input_events, probably
+    #formed by a mask such as charge amplitude > 5 mV. 
+    #sw_ch is the channel to get time info from input_events
+    #Finds events with timestamps (sec and nanosec) within 
+    #a provided half-coincidence window. 
+    def get_coincidence(self, input_events, sw_ch, coinc, coinc_ns):
+        output_dfs = [] #list of dataframes that match coincidence cuts for each event
+        for i, ev in input_events.iterrows():
+            t0 = ev["ch{:d} seconds".format(sw_ch)]
+            t0_ns = ev["ch{:d} nanoseconds".format(sw_ch)]
+            
+            #look through each other software channel and form masks 
+            temp_df = pd.DataFrame()
+            for sch in self.all_sw_chs:
+                #ignore the channel that is the input channel
+                if(sch == sw_ch):
+                    continue
+                mask = ((self.df["ch{:d} seconds".format(sch)] - (t0 - coinc) + ((self.df["ch{:d} nanoseconds".format(sch)] - (t0_ns - coinc_ns))/1e9)) >= 0) &\
+                    ((self.df["ch{:d} seconds".format(sch)] - (t0 + coinc) + ((self.df["ch{:d} nanoseconds".format(sch)] - (t0_ns + coinc_ns))/1e9)) <= 0)
+                selected = self.df[mask]
+                temp_df = pd.concat([temp_df, selected], ignore_index=True)
+                
+            output_dfs.append(temp_df)
+
+        return output_dfs
     
 

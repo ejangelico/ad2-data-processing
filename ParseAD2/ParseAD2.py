@@ -75,7 +75,6 @@ class ParseAD2:
 
         #for each prefix, process the data into the output_dict, and associate a channel ID. 
         for pref in self.file_prefixes:
-            bw = self.config[pref]["baseline_window"]
             pol = np.sign(int(self.config[pref]["polarity"])) #will use this so that every data stream is positive. 
             chs = self.config[pref]["active_channels"] 
             sw_chs = self.config[pref]["software_channels"]
@@ -95,14 +94,12 @@ class ParseAD2:
                 #load the csv data 
                 csv_data = np.genfromtxt(self.topdir + f, delimiter=',',  skip_header=20, dtype=float)
                 
-                #now baseline subtract and correct polarity, and only for channels
+                #now correct polarity, and only for channels
                 #listed as active channels in the config file. 
                 temp_data = []
                 for ch in chs:
                     v = np.array(csv_data[:,ch+1]) #nth column, 0th is time. 
                     v_mv = v*1000 #these files write in units of volts
-                    base = np.mean(v_mv[int(min(bw)):int(max(bw))])
-                    v_mv = v_mv - base
                     v_mv = v_mv*pol 
                     temp_data.append(v_mv)
 
