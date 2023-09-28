@@ -159,7 +159,7 @@ class NGMBinaryFile:
                     print("Had an issue reading the config file, make sure it is a .yaml or .yml file")
                     config = None
                     return
-            config_ch = config["struck_reduction"]["channel_numbers"]
+            config_ch = config["struck_reduction"]["active_channels"]
             chmap_dict = {"Slot":[], "Channel":[]}
             for key in config_ch:
                 for ch in config_ch[key]:

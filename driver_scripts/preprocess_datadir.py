@@ -1,15 +1,14 @@
 import sys
 import os
-sys.path.append("../Dataset/")
 sys.path.append("../ParseStruck/")
 sys.path.append("../ParseAD2/")
 import NGMBinaryFile
 import ParseAD2
-from StruckPreReduction import prereduce
+from StruckPreReduction import prereduce, get_times_from_readthread
 import glob
 import pickle
 import pandas as pd
-
+import time 
 
 #This submission script is meant to preprocess all 
 #data, both struck and AD2 data, in a single data directory. 
@@ -26,23 +25,40 @@ if __name__ == "__main__":
     topdir = sys.argv[1]
     struckdir = sys.argv[1]+"/struck/"
     config = sys.argv[2]
+    readthread = "sisreadthread.log" #assumed in the same folder as /struck/ files. 
     
     infiles = glob.glob(struckdir+"*.bin")
     infiles = sorted(infiles)
-
+    t0 = time.time()
     print("Pre-processing struck data")
-    for i, f in enumerate(infiles):
-        print("Loading data from {}, file {:d} of {:d}".format(f, i, len(infiles)))
-        ngmb = NGMBinaryFile.NGMBinaryFile(input_filename=f, output_directory=struckdir, config_file = config)
-        ngmb.GroupEventsAndWriteToPickle(save=False)
-        print("Pre-reducing the data from {}".format(f))
-        df, date = prereduce(ngmb, config)
+    #process the readthread logfile to get nanosecond timestamps
+    #of when clocks were reset for file-runs. 
+    parse_struck = True
+    try:
+        readthread_stamps = get_times_from_readthread(struckdir+readthread)
+    except:
+        print("There seems to be no read-thread log in the struck directory. Assuming no struck files and moving on. ")
+        parse_struck = False
+    
+    if(parse_struck):
+        for i, f in enumerate(infiles):
+            print("Loading data from {}, file {:d} of {:d}".format(f, i, len(infiles)))
+            ngmb = NGMBinaryFile.NGMBinaryFile(input_filename=f, output_directory=struckdir, config_file = config)
+            ngmb.GroupEventsAndWriteToPickle(save=False)
+            print("Pre-reducing the data from {}".format(f))
+            df, date = prereduce(ngmb, config, readthread_stamps)
+            if(len(df.index) == 0):
+                print("No events found in the struck prereduction of file {}".format(f))
+                print("Not going to pickel it.")
+                continue
 
-        #save at this stage the pre-reduced struck data
-        pickle.dump([df, date], open(struckdir+"prereduced_"+str(i)+".p", "wb"))
+            #save at this stage the pre-reduced struck data
+            pickle.dump([df, date], open(struckdir+"prereduced_"+str(i)+".p", "wb"))
 
+    t1 = time.time()
+    print("Seconds for struck prereduction: {:.2f}".format(t1 - t0))
     print("Pre-processing AD2 data")
-
+    t0 = time.time()
     print("Loading data from {}".format(topdir))
     ad2 = ParseAD2.ParseAD2(topdir, config)
     ad2.load_filenames()
@@ -51,6 +67,8 @@ if __name__ == "__main__":
 
     #save at this stage the pre-reduced ad2 data
     pickle.dump([df, date], open(topdir+"prereduced_ad2.p", "wb"))
+    t1 = time.time()
+    print("Seconds for ad2 prereduction: {:.2f}".format(t1 - t0))
 
 
 

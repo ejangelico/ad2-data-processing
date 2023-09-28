@@ -1,0 +1,3 @@
+For next pre-reduction:
+(implemented but not run) 1. dont baseline subtract. all phenomena are mostly not sensitive to baseline coming out of the digitizer, and when it is, we can baseline subtract later
+(implemented but not run) 2. DAC conversion file is missing in Run 6. 
