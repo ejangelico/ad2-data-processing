@@ -128,8 +128,8 @@ class Dataset:
             dac_conv = 0.5 #use SRS value for the 5 kV supply
 
 
-        #ad2_epoch = datetime.datetime(1969, 12, 31, 17,0,0)
-        ad2_epoch = datetime.datetime(1970, 1, 1, 0,0,0)
+        ad2_epoch = datetime.datetime(1969, 12, 31, 17,0,0)
+        #ad2_epoch = datetime.datetime(1970, 1, 1, 0,0,0)
         
         if(os.path.isfile(self.topdir+self.config["ramp_name"])):
             #load the rampfile data
