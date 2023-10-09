@@ -160,7 +160,7 @@ class Dataset:
             if(len(d.shape) == 1): 
                 d = np.array([d])
             #if it is an empty file, continue
-            if(len(d) != 0):
+            if(d.shape[1] > 0):
                 ts = d[:,0] #seconds since that epoch above
                 ts = [datetime.timedelta(seconds=_) + ad2_epoch for _ in ts] #datetime objects
                 v_mon = np.array(d[:,1])*dac_conv
@@ -533,9 +533,13 @@ class Dataset:
                 adjusted_peak_times = []
                 peak_amplitudes = []
                 for pidx in peaks:
-                    temp_idx = np.where(v[pidx-peak_window:pidx] == np.max(v[pidx-peak_window:pidx]))[0][0] #index of max value
-                    peak_amplitudes.append(v[temp_idx + pidx - peak_window]) #translate to the index referencing the full waveform
-                    adjusted_peak_times.append(ts[temp_idx + pidx - peak_window]) #translate to the index referencing the full waveform
+                    if(pidx - peak_window < 0):
+                        tmp_start = 0
+                    else:
+                        tmp_start = pidx - peak_window
+                    temp_idx = np.where(v[tmp_start:pidx] == np.max(v[tmp_start:pidx]))[0][0] #index of max value
+                    peak_amplitudes.append(v[temp_idx + tmp_start]) #translate to the index referencing the full waveform
+                    adjusted_peak_times.append(ts[temp_idx + tmp_start]) #translate to the index referencing the full waveform
 
                 output["ch{:d} amp".format(sw_ch)] = np.sum(peak_amplitudes)
         return output
@@ -669,7 +673,7 @@ class Dataset:
             #element corresponding to the waveform data for a channel. But the 
             #list doesn't know which index is for which hardware channel, referencing
             #the struck raw data. So we need better channel mapping infrastructure soon. 
-            if(hw_ch > len(row["Data"])):
+            if(hw_ch >= len(row["Data"])):
                 v = row["Data"][-1]
             else:
                 v = row["Data"][hw_ch]
