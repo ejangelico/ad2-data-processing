@@ -157,14 +157,17 @@ class Dataset:
             d = np.genfromtxt(self.topdir+self.config["g_events_name"], delimiter=',', dtype=float)
             #there is a silly thing with genfromtxt where if its a 1 line file, it makes a 1D array instead of the usual
             #2D array. This line forces it into a 2D array so the other lines don't need some other if statement. 
-            if(len(d.shape) == 1): d = np.array([d])
-            ts = d[:,0] #seconds since that epoch above
-            ts = [datetime.timedelta(seconds=_) + ad2_epoch for _ in ts] #datetime objects
-            v_mon = np.array(d[:,1])*dac_conv
-            v_app = np.array(d[:,2])*dac_conv
-            self.g_event_data["t"] = ts 
-            self.g_event_data["v_app"] = v_app
-            self.g_event_data["v_mon"] = v_mon
+            if(len(d.shape) == 1): 
+                d = np.array([d])
+            #if it is an empty file, continue
+            if(len(d) != 0):
+                ts = d[:,0] #seconds since that epoch above
+                ts = [datetime.timedelta(seconds=_) + ad2_epoch for _ in ts] #datetime objects
+                v_mon = np.array(d[:,1])*dac_conv
+                v_app = np.array(d[:,2])*dac_conv
+                self.g_event_data["t"] = ts 
+                self.g_event_data["v_app"] = v_app
+                self.g_event_data["v_mon"] = v_mon
         else:
             print("no g-events-file present at {}, leaving it empty".format(self.topdir+self.config["g_events_name"]))
 
@@ -659,9 +662,17 @@ class Dataset:
         bl_window = self.config["struck_reduction"]["baseline_window"] #samples
         dT = 1e6/float(self.config["struck_reduction"]["clock"]) #us
 
-        for sw_ch in self.struck_chmap:
+        for i, sw_ch in enumerate(self.struck_chmap):
             hw_ch = self.struck_chmap[sw_ch]
-            v = row["Data"][hw_ch]
+            #this NEEDS fixing. It is a stupid fact about the prereduction code
+            #that organizes this row["Data"] structure as a list, with each
+            #element corresponding to the waveform data for a channel. But the 
+            #list doesn't know which index is for which hardware channel, referencing
+            #the struck raw data. So we need better channel mapping infrastructure soon. 
+            if(hw_ch > len(row["Data"])):
+                v = row["Data"][-1]
+            else:
+                v = row["Data"][hw_ch]
 
             #pulse height and basic integrals
             output["ch{:d} amp".format(sw_ch)] = np.max(v[ph_window[0]:ph_window[1]])
