@@ -49,6 +49,6 @@ struck_folder: "struck/"
 rog_gap: 0.285 #cm, gap between rogowskis nominally.
 rog_cap: 20 #pF
 
-month: "9" #for a stupid reason, I can't put the month or year into the AD2 datafile names and its needed for good date parsing. 
+month: "10" #for a stupid reason, I can't put the month or year into the AD2 datafile names and its needed for good date parsing. 
 year: "2023"
 
