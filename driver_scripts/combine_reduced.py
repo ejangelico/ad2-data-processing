@@ -13,7 +13,7 @@ use_all = False #if you want to find all, recursively, reduced.p files.
 #otherwise, put the ds names here
 
 run8_ds = ["ds01/","ds02/","ds03/", "ds04/","ds05/","ds06/","ds07/",\
-        "ds08/","ds09/","ds10/","ds11/"]
+        "ds08/","ds09/","ds10/","ds11/", "ds12/"]
 
 run7_ds = ["ds01/","ds02/","ds03/", "ds04/","ds05/","ds06/","ds07/",\
         "ds08/","ds09/","ds10/","ds11/"]

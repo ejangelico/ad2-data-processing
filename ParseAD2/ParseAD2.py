@@ -77,7 +77,7 @@ class ParseAD2:
         for pref in self.file_prefixes:
             pol = np.sign(int(self.config[pref]["polarity"])) #will use this so that every data stream is positive. 
             chs = self.config[pref]["channel_map"]["ad2_channel"] #indexing the raw AD2 data
-            sw_chs = self.config[pref]["channel_map"]["software_channels"] #new identifiers for these channels
+            sw_chs = self.config[pref]["channel_map"]["software_channel"] #new identifiers for these channels
             #if there's a mistake in the "channel map" of the config file, end. 
             if(len(sw_chs) != len(chs)):
                 print("ISSUE! Software channels and active channels don't match in config file.")

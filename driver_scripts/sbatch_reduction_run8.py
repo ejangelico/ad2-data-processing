@@ -5,7 +5,7 @@ import os
 #make a list of datasets to submit
 topdir = "/p/lustre2/nexouser/data/StanfordData/angelico/hv-test-chamber/Run8/"
 datasets = ["ds01/","ds02/","ds03/", "ds04/","ds05/","ds06/","ds07/",\
-        "ds08/","ds09/","ds10/","ds11/"]
+        "ds08/","ds09/","ds10/","ds11/", "ds12/"]
 
 path_to_config = "/g/g15/angelico/ad2-data-processing/configs/run8_config.yaml"
 jobname = "-run7"

@@ -53,7 +53,7 @@ class Dataset:
         self.columns = []
         self.ad2_chmap = {} #indexed by software channel, gives the index of this channel within the "Data" list in prereduced DF row.  
         for ad2 in self.config["ad2_reduction"]:
-            for i, sw_ch in enumerate(self.config["ad2_reduction"][ad2]["channel_map"]["software_channels"]):
+            for i, sw_ch in enumerate(self.config["ad2_reduction"][ad2]["channel_map"]["software_channel"]):
                 #for saving these software channels for easier access
                 self.ad2_chmap[sw_ch] = self.config["ad2_reduction"][ad2]["channel_map"]["prereduced_index"][i]
                 self.columns.append("ch{:d} amp".format(sw_ch))
@@ -75,7 +75,7 @@ class Dataset:
                 self.columns.append("ch{:d} evidx".format(sw_ch)) #index in the dataframe stored in that file
 
         self.struck_chmap = {} #indexed by software channel, gives the index of this channel within the "Data" list in prereduced DF row. 
-        for i, sw_ch in enumerate(self.config["struck_reduction"]["channel_map"]["software_channels"]):
+        for i, sw_ch in enumerate(self.config["struck_reduction"]["channel_map"]["software_channel"]):
             self.struck_chmap[sw_ch] = self.config["struck_reduction"]["channel_map"]["prereduced_index"][i] #index of the channel in the list of prereduced data
             self.columns.append("ch{:d} amp".format(sw_ch))
             self.columns.append("ch{:d} afterpulse integral".format(sw_ch))
