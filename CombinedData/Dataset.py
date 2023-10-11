@@ -51,11 +51,11 @@ class Dataset:
 
         #finally, we will store all reduced data from waveform analysis into one DF
         self.columns = []
-        self.ad2_chmap = {} #indexed by software channel, gives the "active channel" referencing the data stream index. 
+        self.ad2_chmap = {} #indexed by software channel, gives the index of this channel within the "Data" list in prereduced DF row.  
         for ad2 in self.config["ad2_reduction"]:
-            for i, sw_ch in enumerate(self.config["ad2_reduction"][ad2]["software_channels"]):
+            for i, sw_ch in enumerate(self.config["ad2_reduction"][ad2]["channel_map"]["software_channels"]):
                 #for saving these software channels for easier access
-                self.ad2_chmap[sw_ch] = self.config["ad2_reduction"][ad2]["active_channels"][i]
+                self.ad2_chmap[sw_ch] = self.config["ad2_reduction"][ad2]["channel_map"]["prereduced_index"][i]
                 self.columns.append("ch{:d} amp".format(sw_ch))
                 self.columns.append("ch{:d} full integral".format(sw_ch))
                 self.columns.append("ch{:d} baseline".format(sw_ch))
@@ -74,24 +74,23 @@ class Dataset:
                 self.columns.append("ch{:d} filename".format(sw_ch))
                 self.columns.append("ch{:d} evidx".format(sw_ch)) #index in the dataframe stored in that file
 
-        self.struck_chmap = {} #indexed by software channel, gives the "active channel" referencing the data stream index. 
-        for card in self.config["struck_reduction"]["software_channels"]:
-            for i, sw_ch in enumerate(self.config["struck_reduction"]["software_channels"][card]):
-                self.struck_chmap[sw_ch] = self.config["struck_reduction"]["active_channels"][card][i]
-                self.columns.append("ch{:d} amp".format(sw_ch))
-                self.columns.append("ch{:d} afterpulse integral".format(sw_ch))
-                self.columns.append("ch{:d} trigger integral".format(sw_ch))
-                self.columns.append("ch{:d} baseline".format(sw_ch))
-                self.columns.append("ch{:d} postbaseline".format(sw_ch)) #baseline calculated from the back of the waveform
-                self.columns.append("ch{:d} noise".format(sw_ch))
-                self.columns.append("ch{:d} seconds".format(sw_ch))
-                self.columns.append("ch{:d} nanoseconds".format(sw_ch))
-                self.columns.append("ch{:d} hv".format(sw_ch)) #HV in kV
-                self.columns.append("ch{:d} field".format(sw_ch)) #field in kV/cm
+        self.struck_chmap = {} #indexed by software channel, gives the index of this channel within the "Data" list in prereduced DF row. 
+        for i, sw_ch in enumerate(self.config["struck_reduction"]["channel_map"]["software_channels"]):
+            self.struck_chmap[sw_ch] = self.config["struck_reduction"]["channel_map"]["prereduced_index"][i] #index of the channel in the list of prereduced data
+            self.columns.append("ch{:d} amp".format(sw_ch))
+            self.columns.append("ch{:d} afterpulse integral".format(sw_ch))
+            self.columns.append("ch{:d} trigger integral".format(sw_ch))
+            self.columns.append("ch{:d} baseline".format(sw_ch))
+            self.columns.append("ch{:d} postbaseline".format(sw_ch)) #baseline calculated from the back of the waveform
+            self.columns.append("ch{:d} noise".format(sw_ch))
+            self.columns.append("ch{:d} seconds".format(sw_ch))
+            self.columns.append("ch{:d} nanoseconds".format(sw_ch))
+            self.columns.append("ch{:d} hv".format(sw_ch)) #HV in kV
+            self.columns.append("ch{:d} field".format(sw_ch)) #field in kV/cm
 
-                #for identifying events with waveforms if you want to re-reference waveform files
-                self.columns.append("ch{:d} filename".format(sw_ch))
-                self.columns.append("ch{:d} evidx".format(sw_ch)) #index in the dataframe stored in that file
+            #for identifying events with waveforms if you want to re-reference waveform files
+            self.columns.append("ch{:d} filename".format(sw_ch))
+            self.columns.append("ch{:d} evidx".format(sw_ch)) #index in the dataframe stored in that file
 
 
              
@@ -434,11 +433,8 @@ class Dataset:
         if(ax == None):
             fig, ax = plt.subplots()
         for sw_ch in self.ad2_chmap:
-            hw_ch = self.ad2_chmap[sw_ch]
-            try:
-                v = event["Data"][hw_ch]
-            except:
-                continue
+            prered_ind = self.ad2_chmap[sw_ch]
+            v = event["Data"][prered_ind]
             times = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
             ax.plot(times, v, linewidth=0.8, label="ch{:d}".format(sw_ch))
         
@@ -499,12 +495,9 @@ class Dataset:
             chs = [sw_ch]
 
         for sw_ch in chs:
-            hw_ch = self.ad2_chmap[sw_ch]
+            prered_ind = self.ad2_chmap[sw_ch]
             #get waveform np arrays and time np arrays. 
-            try:
-                v = np.array(row["Data"][hw_ch])
-            except:
-                continue 
+            v = np.array(row["Data"][prered_ind])
 
             v = v - np.mean(v[bl_wind[0]:bl_wind[1]]) #baseline subtract
             ts = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
@@ -567,12 +560,9 @@ class Dataset:
         int_wind = int_wind.astype(int)
         rog_cap = float(self.config["rog_cap"]) #pF
         for sw_ch in self.ad2_chmap:
-            hw_ch = self.ad2_chmap[sw_ch]
+            prered_ind = self.ad2_chmap[sw_ch]
             #get waveform np arrays and time np arrays. 
-            try:
-                v = np.array(row["Data"][hw_ch])
-            except: 
-                continue 
+            v = np.array(row["Data"][prered_ind])
             ts = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
 
             #calculate baselines for use
@@ -677,16 +667,8 @@ class Dataset:
         dT = 1e6/float(self.config["struck_reduction"]["clock"]) #us
 
         for i, sw_ch in enumerate(self.struck_chmap):
-            hw_ch = self.struck_chmap[sw_ch]
-            #this NEEDS fixing. It is a stupid fact about the prereduction code
-            #that organizes this row["Data"] structure as a list, with each
-            #element corresponding to the waveform data for a channel. But the 
-            #list doesn't know which index is for which hardware channel, referencing
-            #the struck raw data. So we need better channel mapping infrastructure soon. 
-            if(hw_ch >= len(row["Data"])):
-                v = row["Data"][-1]
-            else:
-                v = row["Data"][hw_ch]
+            prered_ind = self.struck_chmap[sw_ch]
+            v = row["Data"][prered_ind]
 
             #pulse height and basic integrals
             output["ch{:d} amp".format(sw_ch)] = np.max(v[ph_window[0]:ph_window[1]])

@@ -63,9 +63,7 @@ def prereduce(ngmb, config_file, readthread_stamps):
 
     indf = ngmb.output_df
 
-    #we are now going to loop through the dataframe and do the following:
-    #1. convert to mV
-    #2. Continue past the event if either channel has no voltage sample above config["no_pulse_threshold"]
+    #we are now going to loop through the dataframe and package the data, converting to mV
     print("Prereducing data...")
     pol = np.sign(int(config["polarity"])) #will use this so that every data stream is positive. 
     mv = float(config["mv_per_adc"])
