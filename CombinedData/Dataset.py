@@ -125,7 +125,7 @@ class Dataset:
             l = temp.readlines()[0]
             dac_conv = float(l)
         else:
-            dac_conv = 0.5 #use SRS value for the 5 kV supply
+            dac_conv = 4 #use the 40 kV glassman value. 
 
 
         ad2_epoch = datetime.datetime(1969, 12, 31, 17,0,0)
@@ -484,7 +484,8 @@ class Dataset:
         dT = row["dT"]
         #mV, threshold for decided one analysis vs another based on low amplitude. 
         amp_thr = self.config["ad2_reduction"]["glitch"]["fit_amplitude_threshold"]*1000 
-
+        bl_wind = np.array(self.config["ad2_reduction"]["glitch"]["baseline_window"])/(dT*1e6) #in samples
+        bl_wind = bl_wind.astype(int)
         #minimum spacing between peaks for rejecting noise
         t_space = 20 #us
         #gaussian smoothing time for finding peaks
@@ -504,6 +505,8 @@ class Dataset:
                 v = np.array(row["Data"][hw_ch])
             except:
                 continue 
+
+            v = v - np.mean(v[bl_wind[0]:bl_wind[1]]) #baseline subtract
             ts = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
             v_sm = gaussian_filter(v, t_smooth/(dT*1e6))
             peaks, _ = scipy.signal.find_peaks(v_sm, distance=int(t_space/(dT*1e6)), height=amp_thr)
@@ -571,6 +574,13 @@ class Dataset:
             except: 
                 continue 
             ts = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
+
+            #calculate baselines for use
+            output["ch{:d} baseline".format(sw_ch)] = np.mean(v[bl_wind[0]:bl_wind[1]])
+            output["ch{:d} postbaseline".format(sw_ch)] = np.mean(v[-1*bl_wind[1]:])
+
+            #change the local waveform variable
+            v = v - output["ch{:d} baseline".format(sw_ch)]
 
             #find the abs-max sample and the sign of that sample. 
             max_abs_index = np.argmax(np.abs(v))
