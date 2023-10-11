@@ -47,12 +47,12 @@ class AnalysisTools:
 
     def load_chmaps(self):
         for ad2 in self.config["ad2_reduction"]:
-            for i, sw_ch in enumerate(self.config["ad2_reduction"][ad2]["software_channels"]):
+            for i, sw_ch in enumerate(self.config["ad2_reduction"][ad2]["channel_map"]["software_channel"]):
                 #for saving these software channels for easier access
-                self.ad2_chmap[sw_ch] = self.config["ad2_reduction"][ad2]["active_channels"][i]
-        for card in self.config["struck_reduction"]["software_channels"]:
-            for i, sw_ch in enumerate(self.config["struck_reduction"]["software_channels"][card]):
-                self.struck_chmap[sw_ch] = self.config["struck_reduction"]["active_channels"][card][i]
+                self.ad2_chmap[sw_ch] = self.config["ad2_reduction"][ad2]["channel_map"]["prereduced_index"][i]
+
+        for i, sw_ch in enumerate(self.config["struck_reduction"]["channel_map"]["software_channel"]):
+            self.struck_chmap[sw_ch] = self.config["struck_reduction"]["channel_map"]["prereduced_index"][i]
 
     #this will get waveforms, from their waveform
     #level pre-reduced files, that pass a mask
