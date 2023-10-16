@@ -47,6 +47,7 @@ struck_reduction:
 
 #info for voltage reconstruction. These are assumed to be in the dataset location
 ramp_name: "ramp.txt"
+ramp_sampling_time: 1.3 #seconds, approximate time between samples in the ramp file
 g_events_name: "g_events.txt"
 struck_folder: "struck/"
 rog_gap: 0.285 #cm, gap between rogowskis nominally.

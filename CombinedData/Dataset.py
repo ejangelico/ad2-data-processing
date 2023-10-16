@@ -125,16 +125,12 @@ class Dataset:
             dac_conv = float(l)
         else:
             dac_conv = 4 #use the 40 kV glassman value. 
-
-
-        ad2_epoch = datetime.datetime(1969, 12, 31, 17,0,0)
-        #ad2_epoch = datetime.datetime(1970, 1, 1, 0,0,0)
         
         if(os.path.isfile(self.topdir+self.config["ramp_name"])):
             #load the rampfile data
             d = np.genfromtxt(self.topdir+self.config["ramp_name"], delimiter=',', dtype=float)
             ts = d[:,0] #seconds since that epoch above
-            ts = [datetime.timedelta(seconds=_) + ad2_epoch for _ in ts] #datetime objects
+            ts = [datetime.fromtimestamp(_) for _ in ts] #datetime objects
             v_dac = np.array(d[:,1]) #voltage in volts applied to the control input of the HV supply. needs to be converted for actualy HV applied. 
             v_mon = np.array(d[:,2]) #monitored, if plugged into the external monitor of the supply
             c_mon = np.array(d[:,3]) #monitoring of current, if plugged in. 
