@@ -260,20 +260,64 @@ class AnalysisTools:
         dd = self.df[mask] #masked df
         output_events = {}
         for sw_ch in sw_chs:
+            #get the index of the prereduced "Data" element that this corresponds to
+            if(sw_ch in self.struck_chmap):
+                prered_idx = self.struck_chmap[sw_ch]
+            else:
+                prered_idx = self.ad2_chmap[sw_ch]
+
+
             output_events[sw_ch] = []
             filenames = list(dd["ch{:d} filename".format(sw_ch)])
             evidx = list(dd["ch{:d} evidx".format(sw_ch)]) 
 
             filenames_set = list(set(filenames)) #unique filenames only. 
             for f in filenames_set:
+                if(f == None or isinstance(f, float)): continue
                 df, date = pickle.load(open(f, "rb"))
                 for i in range(len(evidx)):
                     if(filenames[i] == f):
                         event = df.iloc[evidx[i]]
-                        output_events[sw_ch].append(event)
+                        #this event is now a row that has a "Data" element with
+                        #all channels from that DAQ system included. reduce it only
+                        #to the sw_ch data stream, as that is what was requested.  
+                        output_events[sw_ch].append({"Seconds":event["Seconds"], "Nanoseconds":event["Nanoseconds"], "Data":event["Data"][prered_idx]})
 
         return output_events
-    
+
+    #this will get waveforms, from the prereduced
+    #files, based on an input pandas dataframe
+    #as opposed to a mask like in the above function. 
+    def get_waveforms_from_df(self, dd, sw_chs):
+        output_events = {}
+        for sw_ch in sw_chs:
+            #get the index of the prereduced "Data" element that this corresponds to
+            if(sw_ch in self.struck_chmap):
+                prered_idx = self.struck_chmap[sw_ch]
+            else:
+                prered_idx = self.ad2_chmap[sw_ch]
+
+
+
+            output_events[sw_ch] = []
+            filenames = list(dd["ch{:d} filename".format(sw_ch)])
+            evidx = list(dd["ch{:d} evidx".format(sw_ch)]) 
+
+            filenames_set = list(set(filenames)) #unique filenames only. 
+            for f in filenames_set:
+                #reject None's and NaNs
+                if(f == None or isinstance(f, float)): continue
+                df, date = pickle.load(open(f, "rb"))
+                for i in range(len(evidx)):
+                    if(filenames[i] == f):
+                        event = df.iloc[evidx[i]]
+                        #this event is now a row that has a "Data" element with
+                        #all channels from that DAQ system included. reduce it only
+                        #to the sw_ch data stream, as that is what was requested.  
+                        output_events[sw_ch].append({"Seconds":event["Seconds"], "Nanoseconds":event["Nanoseconds"], "Data":event["Data"][prered_idx]})
+
+        return output_events
+
     
     #takes a dataframe that is input_events, probably
     #formed by a mask such as charge amplitude > 5 mV. 
@@ -286,16 +330,22 @@ class AnalysisTools:
             t0 = ev["ch{:d} seconds".format(sw_ch)]
             t0_ns = ev["ch{:d} nanoseconds".format(sw_ch)]
             
-            #look through each other software channel and form masks 
+            #this loop includes all channels that have
+            #events within the provided time window, even the 
+            #input sw_ch
             temp_df = pd.DataFrame()
             for sch in self.all_sw_chs:
-                #ignore the channel that is the input channel
-                if(sch == sw_ch):
-                    continue
                 mask = ((self.df["ch{:d} seconds".format(sch)] - (t0 - coinc) + ((self.df["ch{:d} nanoseconds".format(sch)] - (t0_ns - coinc_ns))/1e9)) >= 0) &\
                     ((self.df["ch{:d} seconds".format(sch)] - (t0 + coinc) + ((self.df["ch{:d} nanoseconds".format(sch)] - (t0_ns + coinc_ns))/1e9)) <= 0)
                 selected = self.df[mask]
-                temp_df = pd.concat([temp_df, selected], ignore_index=True)
+                #one issue with the reduced dataframe in this context is that
+                #particular rows of the dataframe may contain events in different channels
+                #that happen at completely different times. So in this loop we've found
+                #events for channel "sch" that are in coincidence, but those same rows
+                #may contain events in another channel at a different time.
+                #The following line selects a sub-df of this df containing ch{:d} in the column.
+                ch_subdf = selected[selected.columns[selected.columns.str.contains('ch{:d}'.format(sch))]]
+                temp_df = pd.concat([temp_df, ch_subdf], ignore_index=True)
                 
             output_dfs.append(temp_df)
 
