@@ -63,33 +63,19 @@ def prereduce(ngmb, config_file, readthread_stamps):
 
     indf = ngmb.output_df
 
-    #we are now going to loop through the dataframe and do the following:
-    #1. convert to mV
-    #2. Continue past the event if either channel has no voltage sample above config["no_pulse_threshold"]
+    #we are now going to loop through the dataframe and package the data, converting to mV
     print("Prereducing data...")
-    phw = config["pulseheight_window"] #region where primary pulse is expected due to trigger timing. 
     pol = np.sign(int(config["polarity"])) #will use this so that every data stream is positive. 
-    thr = float(config["no_pulse_threshold"])
     mv = float(config["mv_per_adc"])
     dT = 1.0/float(config["clock"]) #seconds
     for i, row in indf.iterrows():
         vs = []
-        above_thresh = []
         for ch in range(len(row["Data"])):
             v = np.array(row["Data"][ch])
             v_mv = v*mv
             v_mv = v_mv*pol 
-            pulse = v_mv[int(min(phw)):int(max(phw))]
-            #check if it passes the threshold
-            if(max(pulse) < thr):
-                above_thresh.append(0)
-            else:
-                above_thresh.append(1)
-
             vs.append(v_mv)
-        #skip past events that don't pass thresh
-        if(0 in above_thresh):
-            continue 
+
             
         output_dict["Data"].append(vs)
 

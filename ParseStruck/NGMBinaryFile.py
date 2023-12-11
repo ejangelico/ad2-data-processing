@@ -159,12 +159,12 @@ class NGMBinaryFile:
                     print("Had an issue reading the config file, make sure it is a .yaml or .yml file")
                     config = None
                     return
-            config_ch = config["struck_reduction"]["active_channels"]
+            config_ch = config["struck_reduction"]["channel_map"]["struck_channel"]
+            config_card = config["struck_reduction"]["channel_map"]["card"]
             chmap_dict = {"Slot":[], "Channel":[]}
-            for key in config_ch:
-                for ch in config_ch[key]:
-                    chmap_dict["Slot"].append(key)
-                    chmap_dict["Channel"].append(ch)
+            for i in range(len(config_ch)):
+                chmap_dict["Slot"].append(config_card[i])
+                chmap_dict["Channel"].append(config_ch[i])
 
 
             self.channel_map = pd.DataFrame(chmap_dict)

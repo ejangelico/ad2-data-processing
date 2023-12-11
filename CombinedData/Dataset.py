@@ -51,11 +51,11 @@ class Dataset:
 
         #finally, we will store all reduced data from waveform analysis into one DF
         self.columns = []
-        self.ad2_chmap = {} #indexed by software channel, gives the "active channel" referencing the data stream index. 
+        self.ad2_chmap = {} #indexed by software channel, gives the index of this channel within the "Data" list in prereduced DF row.  
         for ad2 in self.config["ad2_reduction"]:
-            for i, sw_ch in enumerate(self.config["ad2_reduction"][ad2]["software_channels"]):
+            for i, sw_ch in enumerate(self.config["ad2_reduction"][ad2]["channel_map"]["software_channel"]):
                 #for saving these software channels for easier access
-                self.ad2_chmap[sw_ch] = self.config["ad2_reduction"][ad2]["active_channels"][i]
+                self.ad2_chmap[sw_ch] = self.config["ad2_reduction"][ad2]["channel_map"]["prereduced_index"][i]
                 self.columns.append("ch{:d} amp".format(sw_ch))
                 self.columns.append("ch{:d} full integral".format(sw_ch))
                 self.columns.append("ch{:d} baseline".format(sw_ch))
@@ -74,24 +74,23 @@ class Dataset:
                 self.columns.append("ch{:d} filename".format(sw_ch))
                 self.columns.append("ch{:d} evidx".format(sw_ch)) #index in the dataframe stored in that file
 
-        self.struck_chmap = {} #indexed by software channel, gives the "active channel" referencing the data stream index. 
-        for card in self.config["struck_reduction"]["software_channels"]:
-            for i, sw_ch in enumerate(self.config["struck_reduction"]["software_channels"][card]):
-                self.struck_chmap[sw_ch] = self.config["struck_reduction"]["active_channels"][card][i]
-                self.columns.append("ch{:d} amp".format(sw_ch))
-                self.columns.append("ch{:d} afterpulse integral".format(sw_ch))
-                self.columns.append("ch{:d} trigger integral".format(sw_ch))
-                self.columns.append("ch{:d} baseline".format(sw_ch))
-                self.columns.append("ch{:d} postbaseline".format(sw_ch)) #baseline calculated from the back of the waveform
-                self.columns.append("ch{:d} noise".format(sw_ch))
-                self.columns.append("ch{:d} seconds".format(sw_ch))
-                self.columns.append("ch{:d} nanoseconds".format(sw_ch))
-                self.columns.append("ch{:d} hv".format(sw_ch)) #HV in kV
-                self.columns.append("ch{:d} field".format(sw_ch)) #field in kV/cm
+        self.struck_chmap = {} #indexed by software channel, gives the index of this channel within the "Data" list in prereduced DF row. 
+        for i, sw_ch in enumerate(self.config["struck_reduction"]["channel_map"]["software_channel"]):
+            self.struck_chmap[sw_ch] = self.config["struck_reduction"]["channel_map"]["prereduced_index"][i] #index of the channel in the list of prereduced data
+            self.columns.append("ch{:d} amp".format(sw_ch))
+            self.columns.append("ch{:d} afterpulse integral".format(sw_ch))
+            self.columns.append("ch{:d} trigger integral".format(sw_ch))
+            self.columns.append("ch{:d} baseline".format(sw_ch))
+            self.columns.append("ch{:d} postbaseline".format(sw_ch)) #baseline calculated from the back of the waveform
+            self.columns.append("ch{:d} noise".format(sw_ch))
+            self.columns.append("ch{:d} seconds".format(sw_ch))
+            self.columns.append("ch{:d} nanoseconds".format(sw_ch))
+            self.columns.append("ch{:d} hv".format(sw_ch)) #HV in kV
+            self.columns.append("ch{:d} field".format(sw_ch)) #field in kV/cm
 
-                #for identifying events with waveforms if you want to re-reference waveform files
-                self.columns.append("ch{:d} filename".format(sw_ch))
-                self.columns.append("ch{:d} evidx".format(sw_ch)) #index in the dataframe stored in that file
+            #for identifying events with waveforms if you want to re-reference waveform files
+            self.columns.append("ch{:d} filename".format(sw_ch))
+            self.columns.append("ch{:d} evidx".format(sw_ch)) #index in the dataframe stored in that file
 
 
              
@@ -125,17 +124,13 @@ class Dataset:
             l = temp.readlines()[0]
             dac_conv = float(l)
         else:
-            dac_conv = 0.5 #use SRS value for the 5 kV supply
-
-
-        ad2_epoch = datetime.datetime(1969, 12, 31, 17,0,0)
-        #ad2_epoch = datetime.datetime(1970, 1, 1, 0,0,0)
+            dac_conv = 4 #use the 40 kV glassman value. 
         
         if(os.path.isfile(self.topdir+self.config["ramp_name"])):
             #load the rampfile data
             d = np.genfromtxt(self.topdir+self.config["ramp_name"], delimiter=',', dtype=float)
             ts = d[:,0] #seconds since that epoch above
-            ts = [datetime.timedelta(seconds=_) + ad2_epoch for _ in ts] #datetime objects
+            ts = [datetime.fromtimestamp(_) for _ in ts] #datetime objects
             v_dac = np.array(d[:,1]) #voltage in volts applied to the control input of the HV supply. needs to be converted for actualy HV applied. 
             v_mon = np.array(d[:,2]) #monitored, if plugged into the external monitor of the supply
             c_mon = np.array(d[:,3]) #monitoring of current, if plugged in. 
@@ -157,14 +152,17 @@ class Dataset:
             d = np.genfromtxt(self.topdir+self.config["g_events_name"], delimiter=',', dtype=float)
             #there is a silly thing with genfromtxt where if its a 1 line file, it makes a 1D array instead of the usual
             #2D array. This line forces it into a 2D array so the other lines don't need some other if statement. 
-            if(len(d.shape) == 1): d = np.array([d])
-            ts = d[:,0] #seconds since that epoch above
-            ts = [datetime.timedelta(seconds=_) + ad2_epoch for _ in ts] #datetime objects
-            v_mon = np.array(d[:,1])*dac_conv
-            v_app = np.array(d[:,2])*dac_conv
-            self.g_event_data["t"] = ts 
-            self.g_event_data["v_app"] = v_app
-            self.g_event_data["v_mon"] = v_mon
+            if(len(d.shape) == 1): 
+                d = np.array([d])
+            #if it is an empty file, continue
+            if(d.shape[1] > 0):
+                ts = d[:,0] #seconds since that epoch above
+                ts = [datetime.timedelta(seconds=_) + ad2_epoch for _ in ts] #datetime objects
+                v_mon = np.array(d[:,1])*dac_conv
+                v_app = np.array(d[:,2])*dac_conv
+                self.g_event_data["t"] = ts 
+                self.g_event_data["v_app"] = v_app
+                self.g_event_data["v_mon"] = v_mon
         else:
             print("no g-events-file present at {}, leaving it empty".format(self.topdir+self.config["g_events_name"]))
 
@@ -431,11 +429,8 @@ class Dataset:
         if(ax == None):
             fig, ax = plt.subplots()
         for sw_ch in self.ad2_chmap:
-            hw_ch = self.ad2_chmap[sw_ch]
-            try:
-                v = event["Data"][hw_ch]
-            except:
-                continue
+            prered_ind = self.ad2_chmap[sw_ch]
+            v = event["Data"][prered_ind]
             times = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
             ax.plot(times, v, linewidth=0.8, label="ch{:d}".format(sw_ch))
         
@@ -481,7 +476,8 @@ class Dataset:
         dT = row["dT"]
         #mV, threshold for decided one analysis vs another based on low amplitude. 
         amp_thr = self.config["ad2_reduction"]["glitch"]["fit_amplitude_threshold"]*1000 
-
+        bl_wind = np.array(self.config["ad2_reduction"]["glitch"]["baseline_window"])/(dT*1e6) #in samples
+        bl_wind = bl_wind.astype(int)
         #minimum spacing between peaks for rejecting noise
         t_space = 20 #us
         #gaussian smoothing time for finding peaks
@@ -495,12 +491,11 @@ class Dataset:
             chs = [sw_ch]
 
         for sw_ch in chs:
-            hw_ch = self.ad2_chmap[sw_ch]
+            prered_ind = self.ad2_chmap[sw_ch]
             #get waveform np arrays and time np arrays. 
-            try:
-                v = np.array(row["Data"][hw_ch])
-            except:
-                continue 
+            v = np.array(row["Data"][prered_ind])
+
+            v = v - np.mean(v[bl_wind[0]:bl_wind[1]]) #baseline subtract
             ts = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
             v_sm = gaussian_filter(v, t_smooth/(dT*1e6))
             peaks, _ = scipy.signal.find_peaks(v_sm, distance=int(t_space/(dT*1e6)), height=amp_thr)
@@ -530,9 +525,13 @@ class Dataset:
                 adjusted_peak_times = []
                 peak_amplitudes = []
                 for pidx in peaks:
-                    temp_idx = np.where(v[pidx-peak_window:pidx] == np.max(v[pidx-peak_window:pidx]))[0][0] #index of max value
-                    peak_amplitudes.append(v[temp_idx + pidx - peak_window]) #translate to the index referencing the full waveform
-                    adjusted_peak_times.append(ts[temp_idx + pidx - peak_window]) #translate to the index referencing the full waveform
+                    if(pidx - peak_window < 0):
+                        tmp_start = 0
+                    else:
+                        tmp_start = pidx - peak_window
+                    temp_idx = np.where(v[tmp_start:pidx] == np.max(v[tmp_start:pidx]))[0][0] #index of max value
+                    peak_amplitudes.append(v[temp_idx + tmp_start]) #translate to the index referencing the full waveform
+                    adjusted_peak_times.append(ts[temp_idx + tmp_start]) #translate to the index referencing the full waveform
 
                 output["ch{:d} amp".format(sw_ch)] = np.sum(peak_amplitudes)
         return output
@@ -557,13 +556,17 @@ class Dataset:
         int_wind = int_wind.astype(int)
         rog_cap = float(self.config["rog_cap"]) #pF
         for sw_ch in self.ad2_chmap:
-            hw_ch = self.ad2_chmap[sw_ch]
+            prered_ind = self.ad2_chmap[sw_ch]
             #get waveform np arrays and time np arrays. 
-            try:
-                v = np.array(row["Data"][hw_ch])
-            except: 
-                continue 
+            v = np.array(row["Data"][prered_ind])
             ts = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
+
+            #calculate baselines for use
+            output["ch{:d} baseline".format(sw_ch)] = np.mean(v[bl_wind[0]:bl_wind[1]])
+            output["ch{:d} postbaseline".format(sw_ch)] = np.mean(v[-1*bl_wind[1]:])
+
+            #change the local waveform variable
+            v = v - output["ch{:d} baseline".format(sw_ch)]
 
             #find the abs-max sample and the sign of that sample. 
             max_abs_index = np.argmax(np.abs(v))
@@ -659,9 +662,9 @@ class Dataset:
         bl_window = self.config["struck_reduction"]["baseline_window"] #samples
         dT = 1e6/float(self.config["struck_reduction"]["clock"]) #us
 
-        for sw_ch in self.struck_chmap:
-            hw_ch = self.struck_chmap[sw_ch]
-            v = row["Data"][hw_ch]
+        for i, sw_ch in enumerate(self.struck_chmap):
+            prered_ind = self.struck_chmap[sw_ch]
+            v = row["Data"][prered_ind]
 
             #pulse height and basic integrals
             output["ch{:d} amp".format(sw_ch)] = np.max(v[ph_window[0]:ph_window[1]])
