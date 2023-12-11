@@ -18,8 +18,8 @@ ad2_reduction:
     polarity: -1 #expecting negative pulses 
     no_pulse_threshold: 0 #if max-sample is less than this, don't integrate
     fit_amplitude_threshold: 0.002 #Volts, if max-sample is above this, fit the exponential to get tau and amplitude
-    integration_window: [400, 1000] #us, skip integrating the baseline samples, just integrate this window about peak time.
-    baseline_window: [0, 400] #us, region over which to calculate mean of baseline 
+    integration_window: [-0.1, 1] #us, skip integrating the baseline samples, just integrate this window about peak time.
+    baseline_window: [-1, -0.4] #us, region over which to calculate mean of baseline 
 
 
 
@@ -55,6 +55,6 @@ struck_folder: "struck/"
 rog_gap: 0.285 #cm, gap between rogowskis nominally.
 rog_cap: 20 #pF
 
-month: "10" #for a stupid reason, I can't put the month or year into the AD2 datafile names and its needed for good date parsing. 
+month: "12" #for a stupid reason, I can't put the month or year into the AD2 datafile names and its needed for good date parsing. 
 year: "2023"
 
