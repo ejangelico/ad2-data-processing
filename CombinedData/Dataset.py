@@ -182,27 +182,49 @@ class Dataset:
 
 
     #this function takes the flat, 1D data of HV ramp info and separates
-    #it into indexable ramps and flat tops. 
-    def identify_ramps(self):
-        if(self.ramp_data == {}):
+    #it into indexable ramps and flat tops. It additionally attempts to 
+    #make a mapping between a timestamp and the "total duration above 0V"
+    #to remove many hour/day spaces between ramps and datasets. It does so 
+    #by having an additional list of "durations" that is 1:1 indexible
+    #with the time list.
+    def identify_ramps(self, ref=None):
+        if(len(self.ramp_data.index) == 0):
             print("No ramp data in this dataset")
             return
-        ts = self.ramp_data["t"]
-        vs = self.ramp_data["v_mon"]
+        ts = np.array(self.ramp_data["t"])
+        if(ref == None):
+            ref = "v_mon"
+        if('mon' in ref):
+            ref = "v_mon"
+            vs = np.array(self.ramp_data[ref])
+            #gaussian smooth the noisy voltage monitor data at 2 sample interval
+            vs = gaussian_filter(vs, 2)
+        else:
+            ref = "v_app"
+            vs = np.array(self.ramp_data[ref])
 
-        #gaussian smooth the noisy voltage monitor data at 2 sample interval
-        vs = gaussian_filter(vs, 2)
 
         #this is not measured data, rather is applied data, so everything is digitally generated and smooth. 
         #instead of using peak finding, its going to call a ramp a period where derivative is positive. 
         #it will call a flat top a period where the value doesn't change. 
-        ramps = [{"t":[], "v_mon":[]}]
-        flat_tops = [{"t":[], "v_mon":[]}]
+        ramps = [{"t":[], "v":[]}]
+        flat_tops = [{"t":[], "v":[]}]
         ramping = True #always starts with a ramp as opposed to flat top. use this to trigger a transition in state
         last_vdiff = None
+        #time to duration mapping
+        td_map = {"t":[ts[0]], "dur":[0], "v":[vs[0]]} #both in seconds
+        #threshold for time to duration mapping, duration about "thresh" kV
+        td_thresh = 0.0
 
         state_change_thresh = 0.000 #kilovolts, threshold for whether the derivative has changed. 
         for i in range(1,len(ts)):
+            td_map["t"].append(ts[i])
+            td_map["v"].append(vs[i])
+            if(vs[i] <= td_thresh):
+                td_map["dur"].append(td_map["dur"][-1])
+            else:
+                td_map["dur"].append(td_map["dur"][-1] + self.config["ramp_sampling_time"])
+
             vdiff = vs[i] - vs[i-1]
             #first iteration only
             if(last_vdiff is None): last_vdiff = vdiff
@@ -210,10 +232,10 @@ class Dataset:
             state_change = (np.sign(vdiff) != np.sign(last_vdiff)) and (np.abs(vdiff) > state_change_thresh) #if state changes, then this will be true
             if(ramping and (state_change == False)):
                 ramps[-1]["t"].append(ts[i-1])
-                ramps[-1]["v_mon"].append(vs[i-1])
+                ramps[-1]["v"].append(vs[i-1])
             elif((ramping == False) and (state_change == False) and (vdiff == 0)):
                 flat_tops[-1]["t"].append(ts[i-1])
-                flat_tops[-1]["v_mon"].append(vs[i-1])
+                flat_tops[-1]["v"].append(vs[i-1])
             elif(ramping and state_change):
                 #what kind of state change is it? Are we going from ramp to a new ramp some time later?
                 #or are we going from a ramp to a flat top? 
@@ -221,23 +243,23 @@ class Dataset:
                     #we are starting a new ramp
                     #add the last value to the last ramp and append a fresh element to the list
                     ramps[-1]["t"].append(ts[i-1])
-                    ramps[-1]["v_mon"].append(vs[i-1])
-                    ramps.append({"t":[], "v_mon":[]})
+                    ramps[-1]["v"].append(vs[i-1])
+                    ramps.append({"t":[], "v":[]})
                 elif(vdiff == 0):
                     #we are starting a flat top
                     #add this value to the most recent flat top element and change the state flag
                     ramping = False
                     flat_tops[-1]["t"].append(ts[i-1])
-                    flat_tops[-1]["v_mon"].append(vs[i-1])
+                    flat_tops[-1]["v"].append(vs[i-1])
             elif((ramping == False) and state_change):
                 #we are going from flat top to a new ramp.
                 #add the last datapoint to the flat top list and make a fresh
                 #flat top element and ramp element, then change the ramping state flag
                 ramping = True
                 flat_tops[-1]["t"].append(ts[i-1])
-                flat_tops[-1]["v_mon"].append(vs[i-1])
-                flat_tops.append({"t":[], "v_mon":[]})
-                ramps.append({"t":[], "v_mon":[]})
+                flat_tops[-1]["v"].append(vs[i-1])
+                flat_tops.append({"t":[], "v":[]})
+                ramps.append({"t":[], "v":[]})
             else:
                 print("There is a case in the ramp separation analysis that wasnt considered:")
                 print("Ramping: " + str(ramping))
@@ -248,8 +270,9 @@ class Dataset:
             last_vdiff = vdiff
         
         self.ramps = ramps
-        self.flat_tops = flat_tops #saved for later. 
-                
+        self.flat_tops = flat_tops #saved for later.
+        self.time_duration_map = td_map
+
     #for debugging purposes, plot the ramp data to make
     #sure things are analyzed properly. 
     def plot_ramp_data(self):
