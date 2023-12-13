@@ -33,8 +33,8 @@ class Dataset:
         self.load_config() #now config is a dict form of that yaml file. 
 
         #load files associated with applied high voltage
-        self.ramp_data = {} #ramp data flat and linear, not separated into chunks associated with ramps and flat tops
-        self.g_event_data = {}
+        self.ramp_data = pd.DataFrame() #ramp data flat and linear, not separated into chunks associated with ramps and flat tops
+        self.g_event_data = pd.DataFrame()
         self.ramps = [] #a list of individually separated ramps
         self.flat_tops = [] # a list of individually separated flat tops in voltage applied
         self.load_hv_textfiles() #parses the files into ramp_data and g_event_data
@@ -116,6 +116,9 @@ class Dataset:
     #what HV is applied at what time, and what time/HV trip signals are received. 
     def load_hv_textfiles(self):
 
+        self.ramp_data = pd.DataFrame() #ramp data flat and linear, not separated into chunks associated with ramps and flat tops
+        self.g_event_data = pd.DataFrame()
+
         #we have a few different HV supplies used for different voltage ranges.
         #This conversion text file just has a single text floating point in it
         #that represents the DAC to kV conversion factor. 
@@ -127,29 +130,30 @@ class Dataset:
             dac_conv = 4 #use the 40 kV glassman value. 
         
         if(os.path.isfile(self.topdir+self.config["ramp_name"])):
-            #load the rampfile data
             d = np.genfromtxt(self.topdir+self.config["ramp_name"], delimiter=',', dtype=float)
             ts = d[:,0] #seconds since that epoch above
-            ts = [datetime.fromtimestamp(_) for _ in ts] #datetime objects
             v_dac = np.array(d[:,1]) #voltage in volts applied to the control input of the HV supply. needs to be converted for actualy HV applied. 
             v_mon = np.array(d[:,2]) #monitored, if plugged into the external monitor of the supply
             c_mon = np.array(d[:,3]) #monitoring of current, if plugged in. 
-
-            
-
             v_app = v_dac*dac_conv
-            self.ramp_data["t"] = ts
-            self.ramp_data["v_app"] = v_app
-            self.ramp_data["v_mon"] = v_mon*dac_conv #THIS is the more accurate voltage being applied, not v_app. See calibration folder of 40 kV glassman supply. 
-            self.ramp_data["e_app"] = self.ramp_data["v_mon"]/self.config["rog_gap"] #converting to assumed electric field in kV/cm
-            self.ramp_data["c_mon"] = c_mon
+            v_mon = v_mon*dac_conv
+            c_mon = c_mon*dac_conv
+
+            temp_dict = {}
+            temp_dict["t"] = ts
+            temp_dict["v_app"] = v_app
+            temp_dict["v_mon"] = v_mon #THIS is the more accurate voltage being applied, not v_app. See calibration folder of 40 kV glassman supply. 
+            temp_dict["e_app"] = v_mon/self.config["rog_gap"] #converting to assumed electric field in kV/cm
+            temp_dict["c_mon"] = c_mon
+
+            #add to the ramps dataframe
+            self.ramp_data = pd.concat([self.ramp_data, pd.DataFrame(temp_dict)], axis=0, ignore_index=True)
 
         else:
             print("no ramp file present at {}, leaving it empty".format(self.topdir+self.config["ramp_name"]))
 
         #load the g_events data, if it exists
         if(os.path.isfile(self.topdir+self.config["g_events_name"])):
-            d = np.genfromtxt(self.topdir+self.config["g_events_name"], delimiter=',', dtype=float)
             #there is a silly thing with genfromtxt where if its a 1 line file, it makes a 1D array instead of the usual
             #2D array. This line forces it into a 2D array so the other lines don't need some other if statement. 
             if(len(d.shape) == 1): 
@@ -157,14 +161,24 @@ class Dataset:
             #if it is an empty file, continue
             if(d.shape[1] > 0):
                 ts = d[:,0] #seconds since that epoch above
-                ts = [datetime.timedelta(seconds=_) + ad2_epoch for _ in ts] #datetime objects
                 v_mon = np.array(d[:,1])*dac_conv
                 v_app = np.array(d[:,2])*dac_conv
-                self.g_event_data["t"] = ts 
-                self.g_event_data["v_app"] = v_app
-                self.g_event_data["v_mon"] = v_mon
+
+                temp_dict = {}
+                temp_dict["t"] = ts
+                temp_dict["v_app"] = v_app
+                temp_dict["v_mon"] = v_mon
+
+                self.g_event_data = pd.concat([self.g_event_data, pd.DataFrame(temp_dict)], axis=0, ignore_index=True)
+
         else:
             print("no g-events-file present at {}, leaving it empty".format(self.topdir+self.config["g_events_name"]))
+
+        #sort both dataframes by time
+        if(len(self.g_event_data.index) != 0):
+            self.g_event_data = self.g_event_data.sort_values("t")
+        if(len(self.ramp_data.index) != 0):
+            self.ramp_data = self.ramp_data.sort_values("t")
 
 
     #this function takes the flat, 1D data of HV ramp info and separates
