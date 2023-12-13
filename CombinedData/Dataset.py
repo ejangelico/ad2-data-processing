@@ -13,7 +13,7 @@ import utilities
 import scipy.signal
 import scipy.odr as odr
 import time
-
+import sys
 plt.style.use("~/evanstyle.mplstyle") #replace with your own style sheet. 
 
 
@@ -351,14 +351,14 @@ class Dataset:
     #Performs some corrections for when the nearest
     #HV log point is farther than 2 seconds
     def get_hv_at_time(self, t):    
-        if(self.ramp_data == {}):
+        if(len(self.ramp_data.index) == 0):
             return None
-        dt = datetime.datetime.fromtimestamp(t) #cast as datetime to match our ramp_data.
 
         out_of_bounds = 2 #seconds to perform a different alg to determine HV log points. 
         #find index of closest time in self.ramp_data["t"]
-        cl_idx = min(range(len(self.ramp_data["t"])), key=lambda i: abs((self.ramp_data["t"][i] - dt).total_seconds()))
-        delta = (self.ramp_data["t"][cl_idx] - dt).total_seconds() #number of seconds off from this logged HV time. 
+        ts = np.array(self.ramp_data["t"])
+        cl_idx = np.argmin(np.abs(ts - t))
+        delta = ts[cl_idx] - t #number of seconds off from this logged HV time. 
         if(delta < out_of_bounds):
             return self.ramp_data["v_mon"][cl_idx] #kV #consider linearly interpolating in the future
         else:
