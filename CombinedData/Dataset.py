@@ -549,17 +549,28 @@ class Dataset:
         dT = row["dT"]
         #mV, threshold for decided one analysis vs another based on low amplitude. 
         amp_thr = self.config["ad2_reduction"]["glitch"]["fit_amplitude_threshold"]*1000
-        bl_wind = np.array(self.config["ad2_reduction"]["glitch"]["baseline_window"])/(dT*1e6) #in samples
-        int_wind = np.array(self.config["ad2_reduction"]["glitch"]["integration_window"])/(dT*1e6) #In samples
 
-        bl_wind = bl_wind.astype(int)
-        int_wind = int_wind.astype(int)
+        #I've used a number of units for programmable baseline window and integration window. 
+        #Because there are some runs or datasets where the charge buffer is not constant, I've normalized
+        #to the total buffer length. So baseline window is the fraction of the buffer about 0. So it baseline
+        #being from [0, 400] in samples in a 1000 sample acquisition will be [-1, -0.4]. Note that at the moment
+        #the integration window is really only useful for very small glitches, as the amplitude of a general
+        #pulse above threshold is calculated by an exponential fit. 
+        bl_wind_frac = np.array(self.config["ad2_reduction"]["glitch"]["baseline_window"]) #fraction of buffer about 0
+        int_wind_frac = np.array(self.config["ad2_reduction"]["glitch"]["integration_window"]) 
+
+        
         rog_cap = float(self.config["rog_cap"]) #pF
         for sw_ch in self.ad2_chmap:
             prered_ind = self.ad2_chmap[sw_ch]
             #get waveform np arrays and time np arrays. 
             v = np.array(row["Data"][prered_ind])
             ts = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
+            N_samples = len(v)
+            bl_wind = N_samples*0.5*bl_wind_frac
+            int_wind = N_samples*0.5*int_wind_frac
+            bl_wind = bl_wind.astype(int)
+            int_wind = int_wind.astype(int)
 
             #calculate baselines for use
             output["ch{:d} baseline".format(sw_ch)] = np.mean(v[bl_wind[0]:bl_wind[1]])
