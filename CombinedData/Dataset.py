@@ -713,7 +713,10 @@ class Dataset:
         for i, sw_ch in enumerate(self.struck_chmap):
             prered_ind = self.struck_chmap[sw_ch]
             v = row["Data"][prered_ind]
-
+            #we are intentionally not baseline subtracting the light
+            #system because high voltage events will pretty significantly
+            #shift the baseline. Please do it in post analysis. 
+            
             #pulse height and basic integrals
             output["ch{:d} amp".format(sw_ch)] = np.max(v[ph_window[0]:ph_window[1]])
             output["ch{:d} afterpulse integral".format(sw_ch)] = scipy.integrate.trapezoid(v[ap_window[0]:ap_window[1]], dx=dT) #mV*us

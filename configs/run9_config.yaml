@@ -43,7 +43,7 @@ struck_reduction:
   
   #the struck C++ code that writes a datetime to the filename
   #has a constant offset that is wierd. Use this to correct that timestamp
-  timestamp_offset: -25200 #seconds to add to the filename timestamps on struck files.  
+  timestamp_offset: -28800 #seconds to add to the filename timestamps on struck files. Note! daylight savings time!
 
   impedance: 25 #ohms, it was set to 50 ohms on struck and we have 50 ohms in the discriminators. 
 
