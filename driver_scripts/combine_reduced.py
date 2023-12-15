@@ -12,6 +12,10 @@ output_file = "combined_reduced.p"
 use_all = False #if you want to find all, recursively, reduced.p files. 
 #otherwise, put the ds names here
 
+
+run9_ds = ["ds01/","ds02/","ds03/", "ds04/","ds05/","ds06/","ds07/",\
+        "ds08/","ds09/","ds10/","ds11/","ds12/","ds13/","ds14/"]
+
 run8_ds = ["ds01/","ds02/","ds03/", "ds04/","ds05/","ds06/","ds07/",\
         "ds08/","ds09/","ds10/","ds11/", "ds12/"]
 
@@ -25,8 +29,8 @@ run5_ds = ["ds03/", "ds04/", "ds05/", "ds06/", \
             "ds17/","ds18/","ds19/","ds20/","ds21/","ds22/","ds23/","ds24/","ds25/"]
 
 #topdir = "../../data/Run8/"
-topdir = "/p/lustre2/nexouser/data/StanfordData/angelico/hv-test-chamber/Run8/"
-datasets = run8_ds
+topdir = "/p/lustre2/nexouser/data/StanfordData/angelico/hv-test-chamber/Run9/"
+datasets = run9_ds
 
 if(use_all):
     red_files = glob.glob(topdir+"**/reduced.p", recursive=True)
