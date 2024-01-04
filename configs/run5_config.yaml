@@ -13,12 +13,15 @@ ad2_reduction:
       ad2_channel: [0,1] #which channel indexed in NGMStruckBinaryFile object
       prereduced_index: [0,1] #which index in the prereduced row["Data"] = [[stream0], [stream1], ...] object
       software_channel: [2,3] #a unique identifier across all DAQ systems for the channel. 
-    filter_tau: 0 #ns, filtering anode signal gaussian, 0 for no filtering
-    polarity: -1 #expecting negative pulses 
+    filter_tau: 20 #microseconds gaussian filter smoothing time constant, 0 for no filtering
+    exponential_tau: 400 #microseconds, exponential decay of integrator circuit
     no_pulse_threshold: 0 #if max-sample is less than this, don't integrate
-    fit_amplitude_threshold: 0.002 #if max-sample is above this, fit the exponential to get tau and amplitude
-    integration_window: [400, 1000] #us, skip integrating the baseline samples, just integrate this window about peak time.
-    baseline_window: [0, 400] #us, region over which to calculate mean of baseline 
+    #this variable governs whether (1) a pulse is determined as possibly existing from raw waveform
+    #(2) whether the pulse is detected by a gaussian filtered algorithm that attempts to find peaks
+    fit_amplitude_threshold: 5 #3*std of baseline, a.k.a "noise" variable
+    integration_window: [-0.8, 1] #us, skip integrating the baseline samples, just integrate this window about peak time.
+    baseline_window: [-1, -0.8] #us, region over which to calculate mean of baseline 
+    fit_mode: False #NOT IMPLEMENTED, performs a fit with N exponentials where N is the number of peaks found in the waveform. 
 
 
 
@@ -32,7 +35,6 @@ struck_reduction:
     software_channel: [0,1] #a unique identifier across all DAQ systems for the channel. 
   events_per_file: 500 #number of events to chunkify the data into for saving to pickle files during binary processing. 
   clock: 125e6 #Hz clock rate. 
-  polarity: 1 #expecting positive or negative pulses
   mv_per_adc: 0.03 
   no_pulse_threshold: 15 #mV, amplitude to discard the event as having nothing
   baseline_window: [0, 40] #number of samples over which to calc baseline

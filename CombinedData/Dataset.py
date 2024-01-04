@@ -61,9 +61,16 @@ class Dataset:
                 self.columns.append("ch{:d} baseline".format(sw_ch))
                 self.columns.append("ch{:d} postbaseline".format(sw_ch)) #baseline calculated from the back of the waveform
                 self.columns.append("ch{:d} noise".format(sw_ch))
+                self.columns.append("ch{:d} min".format(sw_ch))
+                self.columns.append("ch{:d} max".format(sw_ch))
+                self.columns.append("ch{:d} absmax".format(sw_ch))
+                self.columns.append("ch{:d} min time".format(sw_ch))
+                self.columns.append("ch{:d} max time".format(sw_ch))
+                self.columns.append("ch{:d} absmax time".format(sw_ch))
                 self.columns.append("ch{:d} seconds".format(sw_ch))
                 self.columns.append("ch{:d} nanoseconds".format(sw_ch))
-                self.columns.append("ch{:d} n peaks".format(sw_ch)) #integer number of peaks found in this waveform
+                self.columns.append("ch{:d} n negpeaks".format(sw_ch)) #integer number of TRULY negative polar pulses in the raw waveform
+                self.columns.append("ch{:d} n pospeaks".format(sw_ch)) #positive polar (i.e. charge going from cathode to gnd (not anode))
                 self.columns.append("ch{:d} hv".format(sw_ch)) #HV in kV
                 self.columns.append("ch{:d} field".format(sw_ch)) #field in kV/cm
                 #more specialized
@@ -83,6 +90,10 @@ class Dataset:
             self.columns.append("ch{:d} baseline".format(sw_ch))
             self.columns.append("ch{:d} postbaseline".format(sw_ch)) #baseline calculated from the back of the waveform
             self.columns.append("ch{:d} noise".format(sw_ch))
+            self.columns.append("ch{:d} min".format(sw_ch))
+            self.columns.append("ch{:d} max".format(sw_ch))
+            self.columns.append("ch{:d} min time".format(sw_ch))
+            self.columns.append("ch{:d} max time".format(sw_ch))
             self.columns.append("ch{:d} seconds".format(sw_ch))
             self.columns.append("ch{:d} nanoseconds".format(sw_ch))
             self.columns.append("ch{:d} hv".format(sw_ch)) #HV in kV
@@ -503,23 +514,34 @@ class Dataset:
     ###########################################################################
 
 
-    #looks at a charge waveform and does a local maximum finding to determine
-    #how many peaks there are. If there are more than 1 peak, then it performs
-    #the necessary analysis to extract info from the whole waveform about charge, 
-    #amplitudes of each peak, etc. 
+    #Admittedly, this is a complicated set of functions that could be simplified. 
+    #This does the following:
+    #1) Gaussian smooths the raw waveform 
+    #2) Finds the peak time and amplitude of the smoothed waveform
+    #3) Corrects the time and amplitude by looking at the raw waveform
+    #in a window near smoothed waveform local maxima
+    #4) Interprets each peak as being a charge deposition by looking at the
+    #baseline near where each peak occurs, corrects based on any previous pulse
+    #where there may still be a falling tail from the 400us integrating circuit
+    #5) Reports remaining peaks and checks that they are above threshold
+    #all of this is done in a polarity agnostic way 
     def analyze_for_multipeaks_charge(self, row, sw_ch=None, debug=False):
         output = {} #keys are sw channels, but elements are dictionaries with extracted information
 
         dT = row["dT"]
         #mV, threshold for decided one analysis vs another based on low amplitude. 
-        amp_thr = self.config["ad2_reduction"]["glitch"]["fit_amplitude_threshold"]*1000 
-        bl_wind = np.array(self.config["ad2_reduction"]["glitch"]["baseline_window"])/(dT*1e6) #in samples
-        bl_wind = bl_wind.astype(int)
+        amp_thr_sig = self.config["ad2_reduction"]["glitch"]["fit_amplitude_threshold"] #sigma threshold
+        #see long comment in the analyze_charge_waveforms function for more info
+        bl_wind_frac = np.array(self.config["ad2_reduction"]["glitch"]["baseline_window"]) #fraction of buffer about 0
+        #exponential decay of integrator circuit
+        exp_tau = self.config["ad2_reduction"]["glitch"]["exponential_tau"] #microseconds
         #minimum spacing between peaks for rejecting noise
-        t_space = 20 #us
+        t_space = 100 #us, this is driven by what has been observed in waveform data as the space between multiple charge depositions
         #gaussian smoothing time for finding peaks
-        t_smooth = 20 #us
-
+        t_smooth = self.config["ad2_reduction"]["glitch"]["filter_tau"] #microseconds
+        #when looking backwards at raw data to find a corrected peak time
+        #relative to the gaussian smoothed shifted time, this window is used
+        peak_window = int(100/(dT*1e6)) #us converted to samples. 
 
         #a switch in case you only want to process one channel or all
         if(sw_ch is None):
@@ -531,46 +553,138 @@ class Dataset:
             prered_ind = self.ad2_chmap[sw_ch]
             #get waveform np arrays and time np arrays. 
             v = np.array(row["Data"][prered_ind])
+            N_samples = len(v)
+            bl_wind = N_samples*0.5*bl_wind_frac + N_samples/2
+            bl_wind = bl_wind.astype(int)
 
             v = v - np.mean(v[bl_wind[0]:bl_wind[1]]) #baseline subtract
             ts = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
-            v_sm = gaussian_filter(v, t_smooth/(dT*1e6))
-            peaks, _ = scipy.signal.find_peaks(v_sm, distance=int(t_space/(dT*1e6)), height=amp_thr)
+            if(t_smooth != 0):
+                v_sm = gaussian_filter(v, t_smooth/(dT*1e6))
+            else: 
+                v_sm = v
+
+            raw_noise = np.std(v[bl_wind[0]:bl_wind[1]])
+            amp_thr = amp_thr_sig*raw_noise
+            width_thresh = 0.8*int(np.log10(2)*exp_tau/(dT*1e6)) #samples, width of peak to be considered a peak. a bit less than the half-height width of exponential
+
+            #finding positive and negative polarity peaks separately. 
+            pospeaks, _ = scipy.signal.find_peaks(v_sm, distance=int(t_space/(dT*1e6)), height=amp_thr, width=width_thresh)
+            negpeaks, _ = scipy.signal.find_peaks(-1*v_sm, distance=int(t_space/(dT*1e6)), height=amp_thr, width=width_thresh)
+
+            output["ch{:d} n pospeaks".format(sw_ch)] = len(pospeaks)
+            output["ch{:d} n negpeaks".format(sw_ch)] = len(negpeaks) 
+            npeaks = len(negpeaks) + len(pospeaks)
+            #If there are any peaks found do the following:
+            #1) find the peak time and amplitude for each peak, adjusting for the gaussian filter's time smearing
+            #2) correct the amplitude for the falling tail of the exponential
+            #3) remove any peaks that are below the amplitude threshold
+            if(npeaks >= 1):
+                #peak times in the gaussian filtered wave are always
+                #going to be a bit after the true peak. Define a window of X
+                #microseconds prior to the gaussian filtered peak time that looks
+                #for the max sample. 
+                
+                adjusted_peak_times = []
+                peak_amplitudes = []
+                polarities = [] #only needed when doing peak_amplitude correction based on falling edge of exponentials
+                #loop through each peak and find the amplitude within a window
+                for pidx in pospeaks:
+                    #make sure the window doesn't have an indexing problem on the waveform list
+                    if(pidx - peak_window < 0):
+                        tmp_start = 0
+                    else:
+                        tmp_start = pidx - peak_window
+                    
+                    #find the maximum value in the window leading from tmp_start to pidx and its
+                    #time in microseconds, append that to the lists
+                    tmp_max = np.max(v[tmp_start:pidx])
+                    tmp_max_idx = np.argmax(v[tmp_start:pidx])
+                    tmp_max_time = ts[tmp_start + tmp_max_idx]
+                    adjusted_peak_times.append(tmp_max_time)
+                    peak_amplitudes.append(tmp_max)
+                    polarities.append(1)
+
+                for pidx in negpeaks:
+                    #make sure the window doesn't have an indexing problem on the waveform list
+                    if(pidx - peak_window < 0):
+                        tmp_start = 0
+                    else:
+                        tmp_start = pidx - peak_window
+                    
+                    #find the minimum value in the window leading from tmp_start to pidx and its
+                    #time in microseconds, append that to the lists
+                    tmp_min = np.min(v[tmp_start:pidx])
+                    tmp_min_idx = np.argmin(v[tmp_start:pidx])
+                    tmp_min_time = ts[tmp_start + tmp_min_idx]
+                    adjusted_peak_times.append(tmp_min_time)
+                    peak_amplitudes.append(tmp_min)
+                    polarities.append(-1)
+                
+                #there is configuration bit in the run9_config that triggers
+                #a computationally expensive fitting mode or a less computationally
+                #expensive amplitude correction mode. This is needed when there
+                #are multiple pulses, or issues with the peak finder where it finds
+                #small peaks on the baseline. BECAUSE if one just adds the peak
+                #amplitudes, and there are a few mistakenly found peaks along the
+                #falling tail of a large exponential, one adds charge equal to the
+                #voltage on that tail at that moment. One wants to correct for the fact
+                #that you're adding a bit of charge to an integrator that is discharging,
+                #so one needs to correct for the pseudo-baseline at the moment of the additional
+                #pulse. 
+                if(self.config["ad2_reduction"]["glitch"]["fit_mode"] == True):
+                    pass #write a fit that is a sum of exponentials using the peak times as the guess
+                else:
+                    #this is the correction mode that just looks n microseconds prior to the peak
+                    #to find the baseline, and subtracts that from the peak amplitude.
+                    for i in range(len(adjusted_peak_times)):
+                        peak_idx = int(adjusted_peak_times[i]/(dT*1e6))
+                        if(peak_idx - peak_window < 0):
+                            tmp_start = 0  
+                        else:
+                            tmp_start = peak_idx - peak_window
+                        sub_baseline = v[tmp_start] #single value for the baseline before this peak. 
+                        peak_amplitudes[i] = peak_amplitudes[i] - sub_baseline
+                
+                #now that the peak amplitudes are corrected for a falling tail, 
+                #remove any counts for negative or positive peaks that are below
+                #the amplitude threshold, as the peak finder in scipy is susceptible
+                #to noise below threshold if its on the falling tail of a big pulse. 
+                readjusted_peak_times = []
+                readjusted_peak_amplitudes = []
+                for i, pa in enumerate(peak_amplitudes):
+                    if(polarities[i]*pa >= amp_thr):
+                        readjusted_peak_times.append(adjusted_peak_times[i])
+                        readjusted_peak_amplitudes.append(pa)
+                    else:
+                        if(polarities[i] > 0 and output["ch{:d} n pospeaks".format(sw_ch)] > 0):
+                            output["ch{:d} n pospeaks".format(sw_ch)] -= 1
+                        if(polarities[i] < 0 and output["ch{:d} n negpeaks".format(sw_ch)] > 0):
+                            output["ch{:d} n negpeaks".format(sw_ch)] -= 1
+
+                output["ch{:d} peaktimes".format(sw_ch)] = readjusted_peak_times
+                output["ch{:d} peakamps".format(sw_ch)] = readjusted_peak_amplitudes
+
+            #otherwise, there were no peaks found and the waveform is just barely
+            #at the threshold such that a gaussian smoothing makes any sample passing
+            #threshold go away. 
+            else:
+                output["ch{:d} peaktimes".format(sw_ch)] = []
+                output["ch{:d} peakamps".format(sw_ch)] = []
+                readjusted_peak_times = []
+                readjusted_peak_amplitudes = [] #just for debugging plot. 
+
 
             if(debug):
                 fig, ax = plt.subplots()
                 ax.plot(ts, v)
                 ax.plot(ts, v_sm)
-                ax.plot(peaks, v[peaks], 'ko')
+                ax.plot(ts[pospeaks], v_sm[pospeaks], 'bo')
+                ax.plot(ts[negpeaks], v_sm[negpeaks], 'go')
+                ax.plot(readjusted_peak_times, readjusted_peak_amplitudes, 'ko')
+                ax.set_title("negpeaks: {:d}, pospeaks: {:d}".format(output["ch{:d} n negpeaks".format(sw_ch)], output["ch{:d} n pospeaks".format(sw_ch)]))
                 plt.show()
-            
-            output["ch{:d} n peaks".format(sw_ch)] = len(peaks)
 
-            #if this is the case, we need to analyze this whole waveform because
-            #the usual fit method won't work. as the code complexifies, this could
-            #become more sophisticated. For the moment, things are a bit simplified. 
-            #For example, just take the sum of amplitudes as the "amp" - blindly,
-            #a real multi-exponential fit would have the second pulse amp a bit less
-            #than the voltage measured at the local maximum. Integral is a real integral
-            #in this case as well. 
-            if(len(peaks) > 1):
-                #peak times in the gaussian filtered wave are always
-                #going to be a bit after the true peak. Define a window of X
-                #microseconds prior to the gaussian filtered peak time that looks
-                #for the max sample. 
-                peak_window = int(30/(dT*1e6)) #us converted to samples. 
-                adjusted_peak_times = []
-                peak_amplitudes = []
-                for pidx in peaks:
-                    if(pidx - peak_window < 0):
-                        tmp_start = 0
-                    else:
-                        tmp_start = pidx - peak_window
-                    temp_idx = np.where(v[tmp_start:pidx] == np.max(v[tmp_start:pidx]))[0][0] #index of max value
-                    peak_amplitudes.append(v[temp_idx + tmp_start]) #translate to the index referencing the full waveform
-                    adjusted_peak_times.append(ts[temp_idx + tmp_start]) #translate to the index referencing the full waveform
-
-                output["ch{:d} amp".format(sw_ch)] = np.sum(peak_amplitudes)
         return output
 
 
@@ -580,14 +694,12 @@ class Dataset:
     #that fitting is not appropriate, so it returns strings
     #that flag why, so that the reduction function can triage
     #and send it through a different method.   
-    #TODO: 
-    #put in a min and max sample into the DF columns
     def analyze_charge_waveforms(self, row, debug=False):
         output = {} #keys are sw channels, but elements are dictionaries with extracted information
 
         dT = row["dT"]
         #mV, threshold for decided one analysis vs another based on low amplitude. 
-        amp_thr = self.config["ad2_reduction"]["glitch"]["fit_amplitude_threshold"]*1000
+        amp_thr_sig = self.config["ad2_reduction"]["glitch"]["fit_amplitude_threshold"] #n*sigma of noise
 
         #I've used a number of units for programmable baseline window and integration window. 
         #Because there are some runs or datasets where the charge buffer is not constant, I've normalized
@@ -606,10 +718,13 @@ class Dataset:
             v = np.array(row["Data"][prered_ind])
             ts = np.array(np.linspace(0, len(v)*dT*1e6, len(v))) #times in microseconds
             N_samples = len(v)
-            bl_wind = N_samples*0.5*bl_wind_frac
-            int_wind = N_samples*0.5*int_wind_frac
+            bl_wind = N_samples*0.5*bl_wind_frac + N_samples/2 #centered about 0
+            int_wind = N_samples*0.5*int_wind_frac + N_samples/2
             bl_wind = bl_wind.astype(int)
             int_wind = int_wind.astype(int)
+            #noise
+            output["ch{:d} noise".format(sw_ch)] = np.std(v[bl_wind[0]:bl_wind[1]]) #mV
+            amp_thr = amp_thr_sig*output["ch{:d} noise".format(sw_ch)] #mV, threshold for deciding one analysis vs another based on low amplitude.
 
             #calculate baselines for use
             output["ch{:d} baseline".format(sw_ch)] = np.mean(v[bl_wind[0]:bl_wind[1]])
@@ -618,69 +733,119 @@ class Dataset:
             #change the local waveform variable
             v = v - output["ch{:d} baseline".format(sw_ch)]
 
+            #put max and min samples of the waveform into the output
+            #and the time at which they occurred
+            output["ch{:d} min".format(sw_ch)] = np.min(v)
+            output["ch{:d} max".format(sw_ch)] = np.max(v)
+            output["ch{:d} min time".format(sw_ch)] = dT*np.argmin(v)*1e6 #microseconds
+            output["ch{:d} max time".format(sw_ch)] = dT*np.argmax(v)*1e6
+
             #find the abs-max sample and the sign of that sample. 
-            max_abs_index = np.argmax(np.abs(v))
-            max_abs_t = ts[max_abs_index]
-            trig_idx = max_abs_index
-            max_val = v[max_abs_index] #independent of polarity
+            absmax_index = np.argmax(np.abs(v))
+            output["ch{:d} absmax time".format(sw_ch)] = dT*absmax_index*1e6
+            absmax_t = dT*absmax_index*1e6 #local stored variable, a little quicker to type
+
+            #this next trig_idx variable represents what the analysis algorithm is going to treat a
+            trig_idx = absmax_index
+            absmax_val = v[absmax_index] #independent of polarity
             
-            #if the max val is above the threshold for doing a fit based analysis
-            if(np.abs(max_val) >= amp_thr):
+            #count the number of samples in the entire waveform that are above the amplitude threshold.
+            #If one just looks at events with absmax above or equal to thresh, you get
+            #tons of events that are clearly noise but with 1 sample above.
+            n_samples_above_thr = len(np.where(np.abs(v) >= amp_thr)[0])
+            n_thresh = 3 #number of samples above threshold to trigger
+            v_polysub = [] #delete if not using debug feature
+
+            if(n_samples_above_thr >= n_thresh):
                 #how many pulses are there in this waveform?
-                n_pulses_dict = self.analyze_for_multipeaks_charge(row, sw_ch=sw_ch)
-                output["ch{:d} n peaks".format(sw_ch)] = n_pulses_dict["ch{:d} n peaks".format(sw_ch)]
+                n_pulses_dict = self.analyze_for_multipeaks_charge(row, sw_ch=sw_ch, debug=debug)
+                output["ch{:d} n pospeaks".format(sw_ch)] = n_pulses_dict["ch{:d} n pospeaks".format(sw_ch)]
+                output["ch{:d} n negpeaks".format(sw_ch)] = n_pulses_dict["ch{:d} n negpeaks".format(sw_ch)]
                 #if greater than 1, do a multi-pulse analysis 
-                if(n_pulses_dict["ch{:d} n peaks".format(sw_ch)] > 1):
+                if(n_pulses_dict["ch{:d} n pospeaks".format(sw_ch)] >= 1 or n_pulses_dict["ch{:d} n negpeaks".format(sw_ch)] >= 1):
                     #then this dict also contains the amplitude reconstruction, sum of
                     #amplitudes of all pulses in the waveform
-                    output["ch{:d} amp".format(sw_ch)] = n_pulses_dict["ch{:d} amp".format(sw_ch)]
-                #otherwise, fit for one exponential
+                    output["ch{:d} amp".format(sw_ch)] = np.sum(n_pulses_dict["ch{:d} peakamps".format(sw_ch)])
+
+                #Otherwise, the peak finder found nothing, which can happen for a few reasons:
+                #(1) There is a peak, but it is pretty small and gaussian smoothing washes it out. 
+                #(2) there is some low frequency baseline wander so that a number of samples are
+                #above threshold (because baseline is calculated from beginning of waveform) but
+                #there is no pulse, so no local maxima is found by peak finder. This is the worst case,
+                #as it can sometimes be called "2 mV" amplitude by using the absmax_val. 
                 else:
+                    #a distinguishing feature of case 2 that is NOT in case 1 is that the early time baseline
+                    #and post baseline will differ by an amount greater than the threshold. Check for this. 
+                    bl_diff = np.abs(output["ch{:d} baseline".format(sw_ch)] - output["ch{:d} postbaseline".format(sw_ch)])
+                    if(bl_diff > amp_thr):
+                        #then this is case 2. Fit a second order polynomial and subtract it
+                        p1 = np.polyfit(ts, v, 2)
+                        v_polysub = v - np.polyval(p1, ts)
+                        #now that the waveform is polynomial subtracted, find the absmax again
+                        output["ch{:d} amp".format(sw_ch)] = np.max(np.abs(v_polysub))
+                        output["ch{:d} n pospeaks".format(sw_ch)] = 0
+                        output["ch{:d} n negpeaks".format(sw_ch)] = 0
+
+                    #otherwise, this is case 1. Just use the absmax_val
+                    else:
+                        print('case 1')
+                        output["ch{:d} amp".format(sw_ch)] = absmax_val
+                        if(absmax_val > 0):
+                            output["ch{:d} n pospeaks".format(sw_ch)] = 1
+                            output["ch{:d} n negpeaks".format(sw_ch)] = 0
+                        else:  
+                            output["ch{:d} n pospeaks".format(sw_ch)] = 0
+                            output["ch{:d} n negpeaks".format(sw_ch)] = 1
+
+                    """
                     #get a chunk of data after the trigger time so as 
                     #to fit an exponential with a start time t0. 
                     fit_time_buffer = int(10/(dT*1e6)) #samples, time after the trigger to which to include the fit
                     ts_trim = ts[trig_idx+fit_time_buffer:]
                     v_trim = v[trig_idx+fit_time_buffer:]
-                    initial_guess = [max_val, 400] #400 is the estimated tau from previous explorative fits. 
+                    initial_guess = [absmax_val, 400] #400 is the estimated tau from previous explorative fits. 
 
                     #ODR based objects for performing fit
-                    odr_model = odr.Model(utilities.exp_wrapper_fixedt0(max_abs_t))
+                    odr_model = odr.Model(utilities.exp_wrapper_fixedt0(absmax_t))
                     odr_data = odr.Data(ts_trim, v_trim)
                     odr_inst = odr.ODR(odr_data, odr_model, beta0=initial_guess)
                     odr_result = odr_inst.run()
                     amp = odr_result.beta[0]
                     tau = odr_result.beta[1]
-
-                    #to confirm with plots
-                    if(debug):
-                        fig, ax = plt.subplots()
-                        ax.plot(ts, v)
-                        ax.plot(ts_trim, utilities.fitfunc_exp(odr_result.beta, ts_trim, max_abs_t), label="{:.2f} e^(-t/{:.2f})".format(*odr_result.beta))
-                        ax.set_xlabel("[us]")
-                        ax.set_ylabel('[mV]')
-                        ax.legend()
-                        plt.show()
-
                     output["ch{:d} amp".format(sw_ch)] = amp 
-
-                
-
+                    """
+                    
 
             #if the event has no samples above the sample threshold for fit based analysis
             else:
                 #just find amplitude as max sample. 
-                output["ch{:d} amp".format(sw_ch)] = max_val
-                output["ch{:d} n peaks".format(sw_ch)] = 0
+                output["ch{:d} amp".format(sw_ch)] = absmax_val
+                output["ch{:d} n pospeaks".format(sw_ch)] = 0
+                output["ch{:d} n negpeaks".format(sw_ch)] = 0
+
+            #to confirm with plots    
+            if(debug and (output["ch{:d} n negpeaks".format(sw_ch)] > 0 or output["ch{:d} n pospeaks".format(sw_ch)] > 0 or len(v_polysub) != 0)):
+                fig, ax = plt.subplots()
+                ax.plot(ts, v)
+                ax.axhline(amp_thr, color='r', linestyle='--', alpha=0.5)
+                ax.axhline(-amp_thr, color='r', linestyle='--', alpha=0.5)
+                ax.axhline(output["ch{:d} amp".format(sw_ch)], color='b', linewidth=3)
+                ax.axvline(ts[bl_wind[0]], color='k', alpha=0.5)
+                ax.axvline(ts[bl_wind[1]], color='k', alpha=0.5)
+                if(len(v_polysub) != 0):
+                    print("Happened")
+                    ax.plot(ts, v_polysub, color='m', linewidth=0.8)
+                ax.set_title("pospeaks: {:d}, negpeaks: {:d}, baseline: {:.1f}".format(output["ch{:d} n pospeaks".format(sw_ch)], output["ch{:d} n negpeaks".format(sw_ch)], output["ch{:d} baseline".format(sw_ch)]))
+                #ax.plot(ts_trim, utilities.fitfunc_exp(odr_result.beta, ts_trim, absmax_t), label="{:.2f} e^(-t/{:.2f})".format(*odr_result.beta))
+                ax.set_xlabel("[us]")
+                ax.set_ylabel('[mV]')
+                ax.legend()
+                plt.show()
 
             #analysis variables agnostic to multipulse structure, amplitude threshold, and otherwise.
 
             #integral
             output["ch{:d} full integral".format(sw_ch)] = scipy.integrate.trapezoid(v[int_wind[0]:int_wind[1]], dx=dT*1e6) #mV*us
-            #baseline (which was subtracted in prereduction, but recalculated here for completeness)
-            output["ch{:d} baseline".format(sw_ch)] = np.mean(v[bl_wind[0]:bl_wind[1]])
-            output["ch{:d} postbaseline".format(sw_ch)] = np.mean(v[-1*bl_wind[1]:])
-            #noise
-            output["ch{:d} noise".format(sw_ch)] = np.std(v[bl_wind[0]:bl_wind[1]])
             #what is kV applied at this time, and save time variables
             output["ch{:d} seconds".format(sw_ch)] = row["Seconds"]
             output["ch{:d} nanoseconds".format(sw_ch)] = row["Nanoseconds"]
@@ -693,7 +858,7 @@ class Dataset:
             #if you assume C = 20 pF for the rogowski, then this charge has deposited
             #some quantity of energy, equal to dU = Q(dQ)/C in Joules
             if(kv != None):
-                fullQ = rog_cap*kv*1000 #V*pF = pC
+                fullQ = -rog_cap*kv*1000 #V*pF = pC
                 dU = reco_charge*fullQ/rog_cap/1000 #pC*pC/pF = pJ, most are on order nJ hence factor of 1000
                 output["ch{:d} energy".format(sw_ch)] = dU
             else:
@@ -705,8 +870,11 @@ class Dataset:
                 
         return output
 
-    #TODO: 
-    #put in a min and max sample into the DF columns
+    #Note, there are a few unique aspects of the light readout that
+    #are governed by physics. One is that I do NOT subtract baseline from
+    #the waveform, but rather choose to do that in analysis stage because
+    #the high voltage phenomena will drastically affect baseline because
+    #lots of light will occur in the assumed baseline window. 
     def analyze_light_waveforms(self, row):
         output = {}
         ph_window = self.config["struck_reduction"]["pulseheight_window"] #samples
@@ -726,6 +894,13 @@ class Dataset:
             output["ch{:d} afterpulse integral".format(sw_ch)] = scipy.integrate.trapezoid(v[ap_window[0]:ap_window[1]], dx=dT) #mV*us
             output["ch{:d} trigger integral".format(sw_ch)] = scipy.integrate.trapezoid(v[ph_window[0]:ph_window[1]], dx=dT) #mV*us
 
+            #put max and min samples of the waveform into the output
+            #and the time at which they occurred
+            output["ch{:d} min".format(sw_ch)] = np.min(v)
+            output["ch{:d} max".format(sw_ch)] = np.max(v)
+            output["ch{:d} min time".format(sw_ch)] = dT*np.argmin(v) #microseconds
+            output["ch{:d} max time".format(sw_ch)] = dT*np.argmax(v)
+
             #noise and baseline
             output["ch{:d} noise".format(sw_ch)] = np.std(v[bl_window[0]:bl_window[1]])
             output["ch{:d} baseline".format(sw_ch)] = np.mean(v[bl_window[0]:bl_window[1]])
@@ -743,10 +918,6 @@ class Dataset:
     
 
         return output
-
-
-
-    
 
     def reduce_data(self, charge=True, light=True):
         redict = {} #form the reduced dataframe out of a dictionary that we append things to. 
@@ -779,7 +950,7 @@ class Dataset:
                 df, date = pickle.load(open(f, "rb"))
                 for i, row in df.iterrows():
                     print("On event {:d} of {:d}".format(i, len(df.index)), end='\r')
-                    output = self.analyze_charge_waveforms(row)
+                    output = self.analyze_charge_waveforms(row, debug=False)
                     #add filename to track this event
                     for sw_ch in self.ad2_chmap:
                         output["ch{:d} filename".format(sw_ch)] = f
