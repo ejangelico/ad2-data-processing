@@ -580,6 +580,8 @@ class Dataset:
     #that fitting is not appropriate, so it returns strings
     #that flag why, so that the reduction function can triage
     #and send it through a different method.   
+    #TODO: 
+    #put in a min and max sample into the DF columns
     def analyze_charge_waveforms(self, row, debug=False):
         output = {} #keys are sw channels, but elements are dictionaries with extracted information
 
@@ -703,6 +705,8 @@ class Dataset:
                 
         return output
 
+    #TODO: 
+    #put in a min and max sample into the DF columns
     def analyze_light_waveforms(self, row):
         output = {}
         ph_window = self.config["struck_reduction"]["pulseheight_window"] #samples
@@ -716,7 +720,7 @@ class Dataset:
             #we are intentionally not baseline subtracting the light
             #system because high voltage events will pretty significantly
             #shift the baseline. Please do it in post analysis. 
-            
+
             #pulse height and basic integrals
             output["ch{:d} amp".format(sw_ch)] = np.max(v[ph_window[0]:ph_window[1]])
             output["ch{:d} afterpulse integral".format(sw_ch)] = scipy.integrate.trapezoid(v[ap_window[0]:ap_window[1]], dx=dT) #mV*us

@@ -352,34 +352,22 @@ class AnalysisTools:
         return output_dfs
     
 
-    #get instantaneous PMT rate at an input time
-    #checking that a particular PMT trigger is not
-    #a signal from the charge scope, i.e. really has light 
-    #being detected. Input is a time interval over which the 
-    #average rate is measured, and the interval is centered about the
-    #input time. t0 is a timestamp. 
-    def get_light_rate(self, t0, t0_ns, dt, dt_ns):
-        #first, mask all events that have a ch4 trigger, which
-        #comes from the charge system
-        ch_4_thresh = 200 #mV above baseline 
-        mask = (~self.df["ch4 amp"].isna()) & (self.df["ch4 amp"] - self.df["ch4 baseline"] < ch_4_thresh)
-        light_events = self.df[mask]
+    #use this function to get light triggers
+    #where the trigger is NOT due to the charge
+    #trigger output alone 
+    def get_light_triggers(self):
+        pmt_thresh = 4 #times the noise std
+        #It is perfectly reasonable for the charge trigger output to come in
+        #during a light pulse. So instead of making this function about ch4 being
+        #above or below threshold, I will make it about the PMT channels having something
+        #other than noise. 
 
-        #get events that are within the timebounds of this dt in both
-        #seconds and nanoseconds precision
-        mask = ((light_events["ch0 seconds"] - (t0 - dt) + ((light_events["ch0 nanoseconds"] - (t0_ns - dt_ns))/1e9)) >= 0) &\
-                    ((light_events["ch0 seconds"] - (t0 + dt) + ((light_events["ch0 nanoseconds"] - (t0_ns + dt_ns))/1e9)) <= 0)
-        selected = light_events[mask]
+        #later, for this mask, use min-max sample instead of a baseline check, as the baseline is often affected
+        #by the HV phenomena in this light channel. 
+        mask = (~self.df["ch0 amp"].isna()) & (((self.df["ch0 amp"] - self.df["ch0 baseline"]) > pmt_thresh*self.df["ch0 noise"]) \
+                                               | ((self.df["ch1 amp"] - self.df["ch1 baseline"]) > pmt_thresh*self.df["ch1 noise"]))
+        return self.df[mask]
 
-        #rate is number of events in the dt window over time of the window. 
-        #also return poisson uncertainty. 
-        N = len(selected.index)
-        if(N == 0):
-            return 0, 0 #technically not the correct uncertainty
-        total_time = dt + dt_ns/1e9
-        rate = N/total_time
-        unc = rate/np.sqrt(N)
-        return rate, unc
 
 
 
