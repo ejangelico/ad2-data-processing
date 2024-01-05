@@ -20,7 +20,7 @@ class AnalysisTools:
     #reduced_df_pickle is the filename of the pickle file containing reduced dataframe
     #ramp_topdir is a directory for which the class looks for all "ramp.txt" files
     #recursively in order to identify ramp timing with timestamps in the reduced DF. 
-    def __init__(self, reduced_df_pickle, config_file,title='', ramp_topdir=None):
+    def __init__(self, reduced_df_pickle, config_file, title='', ramp_topdir=None):
         self.fn = reduced_df_pickle
         self.df = None
         self.title = title
@@ -368,6 +368,58 @@ class AnalysisTools:
         mask = (~self.df["ch0 amp"].isna()) & (((self.df["ch0 amp"] - self.df["ch0 baseline"]) > pmt_thresh*self.df["ch0 noise"]) \
                                                | ((self.df["ch1 amp"] - self.df["ch1 baseline"]) > pmt_thresh*self.df["ch1 noise"]))
         return self.df[mask]
+    
+
+    #this function is intended to find all light events
+    #that are far away in time from any charge related events. Requires
+    #some time period "T" away from charge triggers with seconds precision only. 
+    #N being None or being an integer triggers a more efficient version of this function.
+    #if you just want 1000 random light triggers, you can randomly select and check if has
+    #any proximity to a charge trigger. If it is None, it tries to get ALL light triggers. 
+    def get_cosmic_triggers(self, T, N=None):
+        #getting all light triggers
+        light_df = self.get_light_triggers()
+        #select only those triggers that are a time T at least away
+        #from any charge triggers. Use the amplitude threshold of the
+        #charge channels to determine if a charge trigger is noise or not, 
+        #and accept events where there is just noise waveform on charge scope. 
+        amp_thr = self.config["ad2_reduction"]["glitch"]["fit_amplitude_threshold"] #sigma
+        ch_df = self.df[(~self.df["ch3 amp"].isna())]
+        ch_df = ch_df[np.abs(ch_df["ch3 amp"]) > amp_thr*ch_df["ch3 noise"]]
+
+        if(N == None):
+            #ch_df is usually much smaller, so I will loop through
+            #each charge event and remove all light events that fall within
+            #the timeframe. 
+            for i, row in ch_df.iterrows():
+                print(i)
+                t0 = row["ch3 seconds"]
+                keep_mask = (np.abs(light_df["ch0 seconds"] - t0) > T) 
+                light_df = light_df[keep_mask]
+            output_light_df = light_df
+        else:
+            N = int(N)
+            chosen_indices = []
+            N_good_events = 0
+            output_light_df = pd.DataFrame()
+            while True:
+                if(N_good_events >= N): break
+                if(N_good_events % 100 == 0): print("On event {:d} of {:d}".format(N_good_events, N))
+                index = np.random.randint(0, len(light_df.index))
+                if(index in chosen_indices): continue
+                chosen_indices.append(index)
+                t0 = light_df.iloc[index]["ch0 seconds"]
+                charge_prox_mask = (np.abs(ch_df["ch3 seconds"] - t0) < T)
+                if(len(ch_df[charge_prox_mask].index) == 0):
+                    output_light_df = pd.concat([output_light_df, light_df.iloc[index]], axis=1)
+                    N_good_events += 1
+
+            output_light_df = output_light_df.transpose()
+            output_light_df = output_light_df.reset_index(drop=True)
+
+        return output_light_df
+
+
 
 
 
