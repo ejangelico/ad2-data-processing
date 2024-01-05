@@ -20,9 +20,10 @@ class AnalysisTools:
     #reduced_df_pickle is the filename of the pickle file containing reduced dataframe
     #ramp_topdir is a directory for which the class looks for all "ramp.txt" files
     #recursively in order to identify ramp timing with timestamps in the reduced DF. 
-    def __init__(self, reduced_df_pickle, config_file, ramp_topdir=None):
+    def __init__(self, reduced_df_pickle, config_file,title='', ramp_topdir=None):
         self.fn = reduced_df_pickle
         self.df = None
+        self.title = title
 
         self.config_file = config_file
         self.config = {}
