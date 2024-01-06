@@ -71,6 +71,7 @@ class Dataset:
                 self.columns.append("ch{:d} nanoseconds".format(sw_ch))
                 self.columns.append("ch{:d} n negpeaks".format(sw_ch)) #integer number of TRULY negative polar pulses in the raw waveform
                 self.columns.append("ch{:d} n pospeaks".format(sw_ch)) #positive polar (i.e. charge going from cathode to gnd (not anode))
+                self.columns.append("ch{:d} multipulse times".format(sw_ch)) #times of the multipulse events, for looking at discharge frequency
                 self.columns.append("ch{:d} hv".format(sw_ch)) #HV in kV
                 self.columns.append("ch{:d} field".format(sw_ch)) #field in kV/cm
                 #more specialized
@@ -766,6 +767,7 @@ class Dataset:
                     #then this dict also contains the amplitude reconstruction, sum of
                     #amplitudes of all pulses in the waveform
                     output["ch{:d} amp".format(sw_ch)] = np.sum(n_pulses_dict["ch{:d} peakamps".format(sw_ch)])
+                    output["ch{:d} multipulse times".format(sw_ch)] = n_pulses_dict["ch{:d} peaktimes".format(sw_ch)]
 
                 #Otherwise, the peak finder found nothing, which can happen for a few reasons:
                 #(1) There is a peak, but it is pretty small and gaussian smoothing washes it out. 
