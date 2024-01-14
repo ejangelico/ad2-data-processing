@@ -537,7 +537,7 @@ class Dataset:
         #exponential decay of integrator circuit
         exp_tau = self.config["ad2_reduction"]["glitch"]["exponential_tau"] #microseconds
         #minimum spacing between peaks for rejecting noise
-        t_space = 100 #us, this is driven by what has been observed in waveform data as the space between multiple charge depositions
+        t_space = 50 #us, this is driven by what has been observed in waveform data as the space between multiple charge depositions
         #gaussian smoothing time for finding peaks
         t_smooth = self.config["ad2_reduction"]["glitch"]["filter_tau"] #microseconds
         #when looking backwards at raw data to find a corrected peak time
