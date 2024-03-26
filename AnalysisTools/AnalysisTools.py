@@ -325,8 +325,15 @@ class AnalysisTools:
     #sw_ch is the channel to get time info from input_events
     #Finds events with timestamps (sec and nanosec) within 
     #a provided half-coincidence window. 
+
+    #A key element that makes this function somewhat long is that we do NOT
+    #want to return copies of events. This happens, for example, when charge channel
+    #3 is used as the sw_ch, and the coinc window is large enough to include
+    #multiple charge depositions in the window, each charge deposition will
+    #have its own time through the loop for coincidence and duplicate in the 
+    #output list of dataframes. 
     def get_coincidence(self, input_events, sw_ch, coinc, coinc_ns):
-        output_dfs = [] #list of dataframes that match coincidence cuts for each event
+        event_dfs = [] #list of dataframes that match coincidence cuts for each event
         for i, ev in input_events.iterrows():
             t0 = ev["ch{:d} seconds".format(sw_ch)]
             t0_ns = ev["ch{:d} nanoseconds".format(sw_ch)]
@@ -348,9 +355,46 @@ class AnalysisTools:
                 ch_subdf = selected[selected.columns[selected.columns.str.contains('ch{:d}'.format(sch))]]
                 temp_df = pd.concat([temp_df, ch_subdf], ignore_index=True)
                 
-            output_dfs.append(temp_df)
+            event_dfs.append(temp_df)
 
-        return output_dfs
+        #this is the start of the code to remove duplicates. It uses the evidx attribute
+        #to only keep events that have the largest set of evidxs for each unique combination
+        #of evidxs in a single event window. 
+        filtered_event_dfs = []
+        #first get all evidxs using the sw_ch of interest
+        evidxs = []
+        for ev in event_dfs:
+            mask = ~(np.abs(ev["ch{:d} evidx".format(sw_ch)]).isna())
+            evidxs.append(tuple(ev[mask]["ch{:d} evidx".format(sw_ch)]))
+
+        #find only unique evidxs
+        evidxs_set = list(set(evidxs))
+        #for each event, remove any event that is a subset of a different
+        #event. This will keep only the largest sets that contain other subsets. 
+        kept_evidxs = []
+        for i in range(len(evidxs_set)):
+            test_set = set(evidxs_set[i])
+            keep = True #switches if we dont want to keep
+            for j in range(len(evidxs_set)):
+                if(i == j): continue
+                if(test_set.issubset(evidxs_set[j])):
+                    keep = False
+                    break
+            if(keep == True):
+                kept_evidxs.append(evidxs_set[i])
+
+        #propagate that back to the event_dfs
+        added_evidxs = [] #to make sure not to add duplicates again
+        for ev in event_dfs:
+            mask = ~(np.abs(ev["ch{:d} evidx".format(sw_ch)]).isna())
+            if(tuple(ev[mask]["ch{:d} evidx".format(sw_ch)]) in kept_evidxs and (tuple(ev[mask]["ch{:d} evidx".format(sw_ch)]) not in added_evidxs)):
+                added_evidxs.append(tuple(ev[mask]["ch{:d} evidx".format(sw_ch)]))
+                filtered_event_dfs.append(ev)
+
+        event_dfs = filtered_event_dfs
+            
+
+        return event_dfs
     
 
     #use this function to get light triggers

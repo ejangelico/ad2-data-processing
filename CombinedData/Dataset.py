@@ -82,6 +82,10 @@ class Dataset:
                 self.columns.append("ch{:d} filename".format(sw_ch))
                 self.columns.append("ch{:d} evidx".format(sw_ch)) #index in the dataframe stored in that file
 
+        #TODO: please add a baseline subtracted version in addition to
+        #non-baseline subtracted version of the integrals, because I'm 
+        #presently hard coding integration times in order to baseline subtract
+        #integrals... 
         self.struck_chmap = {} #indexed by software channel, gives the index of this channel within the "Data" list in prereduced DF row. 
         for i, sw_ch in enumerate(self.config["struck_reduction"]["channel_map"]["software_channel"]):
             self.struck_chmap[sw_ch] = self.config["struck_reduction"]["channel_map"]["prereduced_index"][i] #index of the channel in the list of prereduced data
@@ -872,6 +876,10 @@ class Dataset:
                 
         return output
 
+    #TODO: please add a baseline subtracted version in addition to
+    #non-baseline subtracted version of the integrals, because I'm 
+    #presently hard coding integration times in order to baseline subtract
+    #integrals... 
     #Note, there are a few unique aspects of the light readout that
     #are governed by physics. One is that I do NOT subtract baseline from
     #the waveform, but rather choose to do that in analysis stage because
