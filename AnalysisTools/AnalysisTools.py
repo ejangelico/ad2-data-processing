@@ -431,21 +431,25 @@ class AnalysisTools:
         ch_df = self.df[(~self.df["ch3 amp"].isna())]
         ch_df = ch_df[np.abs(ch_df["ch3 amp"]) > amp_thr*ch_df["ch3 noise"]]
 
+        output_light_df = pd.DataFrame()
+
         if(N == None):
             #ch_df is usually much smaller, so I will loop through
             #each charge event and remove all light events that fall within
             #the timeframe. 
-            for i, row in ch_df.iterrows():
-                print(i)
-                t0 = row["ch3 seconds"]
-                keep_mask = (np.abs(light_df["ch0 seconds"] - t0) > T) 
-                light_df = light_df[keep_mask]
-            output_light_df = light_df
+            N_good_events = 0
+            for i, row in light_df.iterrows():
+                if(N_good_events % 100 == 0): print("On event {:d} of {:d}".format(N_good_events, len(light_df.index)))
+                t0 = row["ch0 seconds"]
+                charge_prox_mask = (np.abs(ch_df["ch3 seconds"] - t0) < T)
+                if(len(ch_df[charge_prox_mask].index) == 0):
+                    output_light_df = pd.concat([output_light_df, row], axis=1)
+                    N_good_events += 1
+
         else:
             N = int(N)
             chosen_indices = []
             N_good_events = 0
-            output_light_df = pd.DataFrame()
             while True:
                 if(N_good_events >= N): break
                 if(N_good_events % 100 == 0): print("On event {:d} of {:d}".format(N_good_events, N))
@@ -458,8 +462,8 @@ class AnalysisTools:
                     output_light_df = pd.concat([output_light_df, light_df.iloc[index]], axis=1)
                     N_good_events += 1
 
-            output_light_df = output_light_df.transpose()
-            output_light_df = output_light_df.reset_index(drop=True)
+        output_light_df = output_light_df.transpose()
+        output_light_df = output_light_df.reset_index(drop=True)
 
         return output_light_df
 
