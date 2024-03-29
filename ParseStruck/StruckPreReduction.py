@@ -65,7 +65,6 @@ def prereduce(ngmb, config_file, readthread_stamps):
 
     #we are now going to loop through the dataframe and package the data, converting to mV
     print("Prereducing data...")
-    pol = np.sign(int(config["polarity"])) #will use this so that every data stream is positive. 
     mv = float(config["mv_per_adc"])
     dT = 1.0/float(config["clock"]) #seconds
     for i, row in indf.iterrows():
@@ -73,7 +72,6 @@ def prereduce(ngmb, config_file, readthread_stamps):
         for ch in range(len(row["Data"])):
             v = np.array(row["Data"][ch])
             v_mv = v*mv
-            v_mv = v_mv*pol 
             vs.append(v_mv)
 
             

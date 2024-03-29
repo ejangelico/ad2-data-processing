@@ -20,9 +20,10 @@ class AnalysisTools:
     #reduced_df_pickle is the filename of the pickle file containing reduced dataframe
     #ramp_topdir is a directory for which the class looks for all "ramp.txt" files
     #recursively in order to identify ramp timing with timestamps in the reduced DF. 
-    def __init__(self, reduced_df_pickle, config_file, ramp_topdir=None):
+    def __init__(self, reduced_df_pickle, config_file, title='', ramp_topdir=None):
         self.fn = reduced_df_pickle
         self.df = None
+        self.title = title
 
         self.config_file = config_file
         self.config = {}
@@ -324,8 +325,15 @@ class AnalysisTools:
     #sw_ch is the channel to get time info from input_events
     #Finds events with timestamps (sec and nanosec) within 
     #a provided half-coincidence window. 
+
+    #A key element that makes this function somewhat long is that we do NOT
+    #want to return copies of events. This happens, for example, when charge channel
+    #3 is used as the sw_ch, and the coinc window is large enough to include
+    #multiple charge depositions in the window, each charge deposition will
+    #have its own time through the loop for coincidence and duplicate in the 
+    #output list of dataframes. 
     def get_coincidence(self, input_events, sw_ch, coinc, coinc_ns):
-        output_dfs = [] #list of dataframes that match coincidence cuts for each event
+        event_dfs = [] #list of dataframes that match coincidence cuts for each event
         for i, ev in input_events.iterrows():
             t0 = ev["ch{:d} seconds".format(sw_ch)]
             t0_ns = ev["ch{:d} nanoseconds".format(sw_ch)]
@@ -347,9 +355,124 @@ class AnalysisTools:
                 ch_subdf = selected[selected.columns[selected.columns.str.contains('ch{:d}'.format(sch))]]
                 temp_df = pd.concat([temp_df, ch_subdf], ignore_index=True)
                 
-            output_dfs.append(temp_df)
+            event_dfs.append(temp_df)
 
-        return output_dfs
+        #this is the start of the code to remove duplicates. It uses the evidx attribute
+        #to only keep events that have the largest set of evidxs for each unique combination
+        #of evidxs in a single event window. 
+        filtered_event_dfs = []
+        #first get all evidxs using the sw_ch of interest
+        evidxs = []
+        for ev in event_dfs:
+            mask = ~(np.abs(ev["ch{:d} evidx".format(sw_ch)]).isna())
+            evidxs.append(tuple(ev[mask]["ch{:d} evidx".format(sw_ch)]))
+
+        #find only unique evidxs
+        evidxs_set = list(set(evidxs))
+        #for each event, remove any event that is a subset of a different
+        #event. This will keep only the largest sets that contain other subsets. 
+        kept_evidxs = []
+        for i in range(len(evidxs_set)):
+            test_set = set(evidxs_set[i])
+            keep = True #switches if we dont want to keep
+            for j in range(len(evidxs_set)):
+                if(i == j): continue
+                if(test_set.issubset(evidxs_set[j])):
+                    keep = False
+                    break
+            if(keep == True):
+                kept_evidxs.append(evidxs_set[i])
+
+        #propagate that back to the event_dfs
+        added_evidxs = [] #to make sure not to add duplicates again
+        for ev in event_dfs:
+            mask = ~(np.abs(ev["ch{:d} evidx".format(sw_ch)]).isna())
+            if(tuple(ev[mask]["ch{:d} evidx".format(sw_ch)]) in kept_evidxs and (tuple(ev[mask]["ch{:d} evidx".format(sw_ch)]) not in added_evidxs)):
+                added_evidxs.append(tuple(ev[mask]["ch{:d} evidx".format(sw_ch)]))
+                filtered_event_dfs.append(ev)
+
+        event_dfs = filtered_event_dfs
+            
+
+        return event_dfs
+    
+
+    #use this function to get light triggers
+    #where the trigger is NOT due to the charge
+    #trigger output alone 
+    def get_light_triggers(self):
+        pmt_thresh = 4 #times the noise std
+        #It is perfectly reasonable for the charge trigger output to come in
+        #during a light pulse. So instead of making this function about ch4 being
+        #above or below threshold, I will make it about the PMT channels having something
+        #other than noise. 
+
+        #later, for this mask, use min-max sample instead of a baseline check, as the baseline is often affected
+        #by the HV phenomena in this light channel. 
+        mask = (~self.df["ch0 amp"].isna()) & (((self.df["ch0 amp"] - self.df["ch0 baseline"]) > pmt_thresh*self.df["ch0 noise"]) \
+                                               | ((self.df["ch1 amp"] - self.df["ch1 baseline"]) > pmt_thresh*self.df["ch1 noise"]))
+        return self.df[mask]
+    
+
+    #this function is intended to find all light events
+    #that are far away in time from any charge related events. Requires
+    #some time period "T" away from charge triggers with seconds precision only. 
+    #N being None or being an integer triggers a more efficient version of this function.
+    #if you just want 1000 random light triggers, you can randomly select and check if has
+    #any proximity to a charge trigger. If it is None, it tries to get ALL light triggers. 
+    def get_cosmic_triggers(self, T, N=None):
+        #getting all light triggers
+        light_df = self.get_light_triggers()
+        #select only those triggers that are a time T at least away
+        #from any charge triggers. Use the amplitude threshold of the
+        #charge channels to determine if a charge trigger is noise or not, 
+        #and accept events where there is just noise waveform on charge scope. 
+        amp_thr = self.config["ad2_reduction"]["glitch"]["fit_amplitude_threshold"] #sigma
+        ch_df = self.df[(~self.df["ch3 amp"].isna())]
+        ch_df = ch_df[np.abs(ch_df["ch3 amp"]) > amp_thr*ch_df["ch3 noise"]]
+
+        output_light_df = pd.DataFrame()
+
+        if(N == None):
+            #ch_df is usually much smaller, so I will loop through
+            #each charge event and remove all light events that fall within
+            #the timeframe. 
+            N_good_events = 0
+            for i, row in light_df.iterrows():
+                if(N_good_events % 100 == 0): print("On event {:d} of {:d}".format(N_good_events, len(light_df.index)))
+                t0 = row["ch0 seconds"]
+                charge_prox_mask = (np.abs(ch_df["ch3 seconds"] - t0) < T)
+                if(len(ch_df[charge_prox_mask].index) == 0):
+                    output_light_df = pd.concat([output_light_df, row], axis=1)
+                    N_good_events += 1
+
+        else:
+            N = int(N)
+            chosen_indices = []
+            N_good_events = 0
+            while True:
+                if(N_good_events >= N): break
+                if(N_good_events % 100 == 0): print("On event {:d} of {:d}".format(N_good_events, N))
+                index = np.random.randint(0, len(light_df.index))
+                if(index in chosen_indices): continue
+                chosen_indices.append(index)
+                t0 = light_df.iloc[index]["ch0 seconds"]
+                charge_prox_mask = (np.abs(ch_df["ch3 seconds"] - t0) < T)
+                if(len(ch_df[charge_prox_mask].index) == 0):
+                    output_light_df = pd.concat([output_light_df, light_df.iloc[index]], axis=1)
+                    N_good_events += 1
+
+        output_light_df = output_light_df.transpose()
+        output_light_df = output_light_df.reset_index(drop=True)
+
+        return output_light_df
+
+
+
+
+
+
+
     
 
 

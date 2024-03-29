@@ -19,7 +19,7 @@ activate_venv = 'source $HOME/my_personal_env/bin/activate'
 jobcount = 0
 for ds in datasets:
     path_to_dataset = topdir+ds
-    cmd_options = '--export=ALL -p pbatch -t 3:00:00 -n 1 -J {} -o {}{}.out'.format(ds[:-1]+jobname, topdir, ds[:-1]+jobname)
+    cmd_options = '--export=ALL -p pbatch -t 1:00:00 -n 1 -J {} -o {}{}.out'.format(ds[:-1]+jobname, topdir, ds[:-1]+jobname)
     exe = 'python $HOME/ad2-data-processing/driver_scripts/reduce_datadir.py {} {}'.format(path_to_dataset, path_to_config)
     cmd_full = '{} && sbatch {} --wrap=\'{}\''.format(activate_venv,cmd_options,exe)
 
