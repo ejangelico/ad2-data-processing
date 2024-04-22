@@ -36,10 +36,10 @@ class Dataset:
         #load files associated with applied high voltage
         self.ramp_data = pd.DataFrame() #ramp data flat and linear, not separated into chunks associated with ramps and flat tops
         self.g_event_data = pd.DataFrame()
-        self.ramps = [] #a list of individually separated ramps
-        self.flat_tops = [] # a list of individually separated flat tops in voltage applied
+        self.time_duration_map = {"t":[], "dur":[], "v":[]} # a 1:1 mapping between timestamps (unix epoch) and duration above 0V to cut out down-time from time plots. 
         self.load_hv_textfiles() #parses the files into ramp_data and g_event_data
-        self.identify_ramps() #analyzes the ramp data to separate into a list of ramps and a list of flat tops
+        self.correct_hv_data()
+        self.create_time_duration_map()
 
         #don't load, but prep file lists corresponding to each DAQ system.
         self.ad2_files = glob.glob(self.topdir+"prereduced*.p")

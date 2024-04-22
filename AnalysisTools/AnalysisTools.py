@@ -41,8 +41,6 @@ class AnalysisTools:
         self.ramp_topdir = ramp_topdir
         self.ramp_data = pd.DataFrame() #ramp data flat and linear, not separated into chunks associated with ramps and flat tops
         self.g_event_data = pd.DataFrame()
-        self.ramps = [] #a list of individually separated ramps
-        self.flat_tops = [] # a list of individually separated flat tops in voltage applied
         self.time_duration_map = {"t":[], "dur":[], "v":[]} # a 1:1 mapping between timestamps (unix epoch) and duration above 0V to cut out down-time from time plots. 
         if(self.ramp_topdir != None):
             self.load_hv_textfiles() #parses the files into ramp_data and g_event_data
