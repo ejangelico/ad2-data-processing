@@ -840,7 +840,6 @@ class Dataset:
 
                     #otherwise, this is case 1. Just use the absmax_val
                     else:
-                        print('case 1')
                         output["ch{:d} amp".format(sw_ch)] = absmax_val
                         if(absmax_val > 0):
                             output["ch{:d} n pospeaks".format(sw_ch)] = 1
