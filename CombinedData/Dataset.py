@@ -147,56 +147,55 @@ class Dataset:
         
         self.clear_hv_data()
 
-        for root, dirs, files in os.walk(self.ramp_topdir):
-            #only process rampdata if you're in a directory with a ramp.txt file. 
-            if(self.config["ramp_name"] in files):
+        #only process rampdata if you're in a directory with a ramp.txt file. 
+        if(self.config["ramp_name"] in files):
 
-                if("dac_conversion.txt" in files):
-                    temp = open(os.path.join(root, "dac_conversion.txt"), "r")
-                    l = temp.readlines()[0]
-                    dac_conv = float(l)
-                else:
-                    dac_conv = 4 #use the 40 kV glassman value. 
-                
-                
-                #load the rampfile data
-                d = np.genfromtxt(os.path.join(root, self.config["ramp_name"]), delimiter=',', dtype=float)
+        if(os.path.isfile(self.topdir+"dac_conversion.txt")):
+            temp = open(self.topdir+"dac_conversion.txt", "r")
+            l = temp.readlines()[0]
+            dac_conv = float(l)
+        else:
+            dac_conv = 4 #use the 40 kV glassman value. 
+            
+        if(os.path.isfile(self.topdir+self.config["ramp_name"])):
+            #load the rampfile data
+            d = np.genfromtxt(self.topdir+self.config["ramp_name"], delimiter=',', dtype=float)
+            ts = d[:,0] #seconds since that epoch above
+            v_dac = np.array(d[:,1]) #voltage in volts applied to the control input of the HV supply. needs to be converted for actualy HV applied. 
+            v_mon = np.array(d[:,2]) #monitored, if plugged into the external monitor of the supply
+            c_mon = np.array(d[:,3]) #monitoring of current, if plugged in. 
+            v_app = v_dac*dac_conv
+            v_mon = v_mon*dac_conv
+            c_mon = c_mon*dac_conv
+
+            temp_dict = {}
+            temp_dict["t"] = ts
+            temp_dict["v_app"] = v_app
+            temp_dict["v_mon"] = v_mon #THIS is the more accurate voltage being applied, not v_app. See calibration folder of 40 kV glassman supply. 
+
+            #add to the ramps dataframe
+            self.ramp_data = pd.concat([self.ramp_data, pd.DataFrame(temp_dict)], axis=0, ignore_index=True)
+
+
+        #load the g_events data, if it exists
+        if(os.path.isfile(self.topdir+self.config["g_events_name"])):
+            d = np.genfromtxt(self.topdir+self.config["g_events_name"], delimiter=',', dtype=float)
+            #there is a silly thing with genfromtxt where if its a 1 line file, it makes a 1D array instead of the usual
+            #2D array. This line forces it into a 2D array so the other lines don't need some other if statement. 
+            if(len(d.shape) == 1): 
+                d = np.array([d])
+            #if it is an empty file, continue
+            if(d.shape[1] > 0):
                 ts = d[:,0] #seconds since that epoch above
-                v_dac = np.array(d[:,1]) #voltage in volts applied to the control input of the HV supply. needs to be converted for actualy HV applied. 
-                v_mon = np.array(d[:,2]) #monitored, if plugged into the external monitor of the supply
-                c_mon = np.array(d[:,3]) #monitoring of current, if plugged in. 
-                v_app = v_dac*dac_conv
-                v_mon = v_mon*dac_conv
-                c_mon = c_mon*dac_conv
+                v_mon = np.array(d[:,1])*dac_conv
+                v_app = np.array(d[:,2])*dac_conv
 
                 temp_dict = {}
                 temp_dict["t"] = ts
                 temp_dict["v_app"] = v_app
-                temp_dict["v_mon"] = v_mon #THIS is the more accurate voltage being applied, not v_app. See calibration folder of 40 kV glassman supply. 
+                temp_dict["v_mon"] = v_mon
 
-                #add to the ramps dataframe
-                self.ramp_data = pd.concat([self.ramp_data, pd.DataFrame(temp_dict)], axis=0, ignore_index=True)
-
-
-            #load the g_events data, if it exists
-            if(self.config["g_events_name"] in files):
-                d = np.genfromtxt(os.path.join(root, self.config["g_events_name"]), delimiter=',', dtype=float)
-                #there is a silly thing with genfromtxt where if its a 1 line file, it makes a 1D array instead of the usual
-                #2D array. This line forces it into a 2D array so the other lines don't need some other if statement. 
-                if(len(d.shape) == 1): 
-                    d = np.array([d])
-                #if it is an empty file, continue
-                if(d.shape[1] > 0):
-                    ts = d[:,0] #seconds since that epoch above
-                    v_mon = np.array(d[:,1])*dac_conv
-                    v_app = np.array(d[:,2])*dac_conv
-
-                    temp_dict = {}
-                    temp_dict["t"] = ts
-                    temp_dict["v_app"] = v_app
-                    temp_dict["v_mon"] = v_mon
-
-                    self.g_event_data = pd.concat([self.g_event_data, pd.DataFrame(temp_dict)], axis=0, ignore_index=True)
+                self.g_event_data = pd.concat([self.g_event_data, pd.DataFrame(temp_dict)], axis=0, ignore_index=True)
 
         #sort both dataframes by time
         if(len(self.g_event_data.index) != 0):
