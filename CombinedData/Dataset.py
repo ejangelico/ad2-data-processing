@@ -14,7 +14,7 @@ import scipy.signal
 import scipy.odr as odr
 import time
 import sys
-plt.style.use("~/evanstyle.mplstyle") #replace with your own style sheet. 
+plt.style.use("/Users/linsi/Documents/stanford/pythonstyle/evanstyle.mplstyle") #replace with your own style sheet. 
 
 
 
