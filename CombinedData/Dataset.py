@@ -396,7 +396,7 @@ class Dataset:
             tb_b[1] = t + tb
         else:
             tb_b[1] = np.max(ts)
-            
+
         fine_dt = 0.01 #seconds this is shorter than 50 ms and greater than 4 ms
         #linearly interpolate to even the time domain
         ts_fine = np.arange(tb_b[0], tb_b[1], fine_dt) #only execute that interpolation in a small region
@@ -840,7 +840,6 @@ class Dataset:
 
                     #otherwise, this is case 1. Just use the absmax_val
                     else:
-                        print('case 1')
                         output["ch{:d} amp".format(sw_ch)] = absmax_val
                         if(absmax_val > 0):
                             output["ch{:d} n pospeaks".format(sw_ch)] = 1

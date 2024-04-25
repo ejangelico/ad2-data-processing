@@ -95,17 +95,22 @@ class AnalysisTools:
         self.clear_hv_data()
 
         for root, dirs, files in os.walk(self.ramp_topdir):
-            #only process rampdata if you're in a directory with a ramp.txt file. 
-            if(self.config["ramp_name"] in files):
-
-                if("dac_conversion.txt" in files):
+            #only process if youre in a folder that has dataset name prefix that indicates
+            #it is for scientific HV phenomena testing (and not calibration, or filling, or filter testing)
+            ds_tag = root.split('/')[-1].lower()
+            if(self.config["dataset_name"] not in ds_tag):
+                continue
+            
+            if("dac_conversion.txt" in files):
                     temp = open(os.path.join(root, "dac_conversion.txt"), "r")
                     l = temp.readlines()[0]
                     dac_conv = float(l)
-                else:
-                    dac_conv = 4 #use the 40 kV glassman value. 
-                
-                
+            else:
+                dac_conv = 4 #use the 40 kV glassman value. 
+
+            #only process rampdata if you're in a directory with a ramp.txt file. 
+            if(self.config["ramp_name"] in files):
+
                 #load the rampfile data
                 d = np.genfromtxt(os.path.join(root, self.config["ramp_name"]), delimiter=',', dtype=float)
                 ts = d[:,0] #seconds since that epoch above
@@ -127,6 +132,7 @@ class AnalysisTools:
 
             #load the g_events data, if it exists
             if(self.config["g_events_name"] in files):
+
                 d = np.genfromtxt(os.path.join(root, self.config["g_events_name"]), delimiter=',', dtype=float)
                 #there is a silly thing with genfromtxt where if its a 1 line file, it makes a 1D array instead of the usual
                 #2D array. This line forces it into a 2D array so the other lines don't need some other if statement. 
