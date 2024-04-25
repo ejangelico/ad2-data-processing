@@ -54,6 +54,7 @@ ramp_name: "ramp.txt"
 dataset_name: "ds" #this prefix distinguishes a dataset that is used for HV phenomena testing as opposed to say, filter testing, or filling/emptying. 
 g_events_name: "g_events.txt"
 struck_folder: "struck/"
+calib_path: "calibrations/" #assumed relative path from topdir in Dataset.py or RunX from AnalysisTools.
 rog_gap: 0.285 #cm, gap between rogowskis nominally.
 rog_cap: 20 #pF
 

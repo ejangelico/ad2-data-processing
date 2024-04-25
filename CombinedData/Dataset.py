@@ -168,7 +168,8 @@ class Dataset:
             temp_dict = {}
             temp_dict["t"] = ts
             temp_dict["v_app"] = v_app
-            temp_dict["v_mon"] = v_mon #THIS is the more accurate voltage being applied, not v_app. See calibration folder of 40 kV glassman supply. 
+            temp_dict["v_mon"] = v_mon 
+            temp_dict["dac_conv"] = dac_conv #used to identify which supply is being used, for calibrating the actual voltage. 
 
             #add to the ramps dataframe
             self.ramp_data = pd.concat([self.ramp_data, pd.DataFrame(temp_dict)], axis=0, ignore_index=True)
@@ -191,6 +192,7 @@ class Dataset:
                 temp_dict["t"] = ts
                 temp_dict["v_app"] = v_app
                 temp_dict["v_mon"] = v_mon
+                temp_dict["dac_conv"] = dac_conv #used to identify which supply is being used, for calibrating the actual voltage. 
 
                 self.g_event_data = pd.concat([self.g_event_data, pd.DataFrame(temp_dict)], axis=0, ignore_index=True)
 
@@ -200,6 +202,35 @@ class Dataset:
         if(len(self.ramp_data.index) != 0):
             self.ramp_data = self.ramp_data.sort_values("t")
 
+
+    #for a given applied voltage and supply, indicated by
+    #the dac_conversion factor, what is the actual voltage applied
+    #to the cathode? This is not totally complete yet, as we are still 
+    #calibrating! But whatever information we do have, is input in this function. 
+    #By default returns uncalibrated data. 
+    def supply_calibration(self, dac_conv, v_app):
+        pth = self.config["calib_path"] #name of the calibrations folder
+        cpth = self.topdir + "../../" + pth #calibration path
+        cv = v_app #corrected voltage
+
+        if(dac_conv == 4.0):
+            #40 kV glassman supply
+            if(os.path.isfile(cpth + "40kV_glassman_calibration.p")):
+                #monitor correction, a number close to 1.0, normalized by v_app
+                s = pickle.load(open(cpth + "40kV_glassman_calibration.p", "rb"))[0]
+                
+                #at a certain point, the DAC cant output large enough voltages due to current limit
+                if(v_app > 18.98):
+                    cv = s(18.98/dac_conv)*18.98
+                else:
+                    cv = s(v_app/dac_conv)*v_app
+                    
+        #leakage current solely from the bleeder resistors and resistances. 
+        #no capacitance leakage current included nor xenon leakage current. 
+        leakage_factor = 0.9967 
+        cv = leakage_factor*cv
+
+        return cv
 
     #This function attemps to correct the ramp data 
     #to act as a reference for high voltage interpolation
@@ -222,6 +253,11 @@ class Dataset:
         vs_m = np.array(self.ramp_data["v_mon"])
         vs_ga = np.array(self.g_event_data["v_app"])
         vs_gm = np.array(self.g_event_data["v_mon"])
+        dac = np.array(self.ramp_data["dac_conv"])
+        dac_g = np.array(self.g_event_data["dac_conv"])
+
+        #calibrate the applied voltages
+        vs_cal = [self.supply_calibration(dac[i], vs_a[i]) for i in range(len(dac))]
         
         #the times of monitored voltages in the ramp.txt file
         #are not always the same timestep, but they are always
@@ -244,6 +280,7 @@ class Dataset:
         new_ts = []
         new_vs_a = [] 
         new_vs_m = []
+        new_vs_cal = [] #calibrated voltages
         for i, gt in enumerate(ts_g):
             #find the closest time in the ramp data
             idx = (np.abs(ts_a - gt)).argmin()
@@ -269,12 +306,14 @@ class Dataset:
             new_ts.append(gt)
             new_vs_a.append(vs_ga[i])
             new_vs_m.append(vs_gm[i])
+            new_vs_cal.append(self.supply_calibration(dac_g[i], vs_ga[i]))
             #add a point that is fin_dt away from the g-event reset time
             #and has a voltage equal to the next starting voltage
             #(far in the future)
             new_ts.append(gt + fine_dt)
             new_vs_a.append(vs_a[idx+1])
             new_vs_m.append(vs_m[idx+1])
+            new_vs_cal.append(self.supply_calibration(dac[idx+1], vs_a[idx+1]))
         
 
 
@@ -282,11 +321,13 @@ class Dataset:
         ts_a = np.append(ts_a, new_ts)
         vs_a = np.append(vs_a, new_vs_a)
         vs_m = np.append(vs_m, new_vs_m) #artificially adding a perfect value to the monitor voltage. 
+        vs_cal = np.append(vs_cal, new_vs_cal)
         #sort the lists by ts_a simultaneous
         idx = np.argsort(ts_a)
         ts_a = ts_a[idx]
         vs_a = vs_a[idx]
         vs_m = vs_m[idx]
+        vs_cal = vs_cal[idx]
 
         #next, with the g-events accounted for, we will re-parse the
         #voltage-time stream looking for any gaps in time. Correct
@@ -294,6 +335,7 @@ class Dataset:
         new_ts = []
         new_vs_a = []
         new_vs_m = []
+        new_vs_cal = []
         for i in range(len(ts_a) - 1):
             if(ts_a[i+1] - ts_a[i] > reset_thresh):
                 #add a point that is fine_dt away from the reset time
@@ -302,6 +344,7 @@ class Dataset:
                 new_ts.append(ts_a[i] + fine_dt)
                 new_vs_a.append(vs_a[i+1])
                 new_vs_m.append(vs_m[i+1])
+                new_vs_cal.append(vs_cal[i+1])
 
         #repeat the sorting process
 
@@ -309,17 +352,20 @@ class Dataset:
         ts_a = np.append(ts_a, new_ts)
         vs_a = np.append(vs_a, new_vs_a)
         vs_m = np.append(vs_m, new_vs_m) #artificially adding a perfect value to the monitor voltage. 
+        vs_cal = np.append(vs_cal, new_vs_cal)
         #sort the lists by ts_a simultaneous
         idx = np.argsort(ts_a)
         ts_a = ts_a[idx]
         vs_a = vs_a[idx]
         vs_m = vs_m[idx]
+        vs_cal = vs_cal[idx]
 
 
         self.ramp_data = pd.DataFrame()
         self.ramp_data["t"] = ts_a
         self.ramp_data["v_app"] = vs_a
         self.ramp_data["v_mon"] = vs_m
+        self.ramp_data["v_cal"] = vs_cal
 
     #this function will make a 1-to-1 mapping between
     #timestamp and how long the system has been above 
