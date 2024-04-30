@@ -381,7 +381,7 @@ class Dataset:
     #sometimes has a small non-physical non-zero offset. Default is 200V. 
     def create_time_duration_map(self, v_thresh=0.2):
         self.time_duration_map = {"t":[], "dur":[], "v":[]}
-        vs_r = np.array(self.ramp_data["v_app"])
+        vs_r = np.array(self.ramp_data["v_cal"])
         ts_r = np.array(self.ramp_data["t"])
         for i in range(1, len(ts_r)):
             if(vs_r[i] > v_thresh and vs_r[i-1] > v_thresh):
@@ -426,7 +426,7 @@ class Dataset:
         if(idx_r > len(self.ramp_data.index)): idx_r = len(self.ramp_data.index)
         
         ts = np.array(self.ramp_data["t"])[idx_l:idx_r]
-        vs = np.array(self.ramp_data["v_app"])[idx_l:idx_r]
+        vs = np.array(self.ramp_data["v_cal"])[idx_l:idx_r]
         if(np.min(ts) > t or np.max(ts) < t):
             #if this time is somehow still not in the range of the data
             return None
@@ -950,7 +950,7 @@ class Dataset:
             #what is kV applied at this time, and save time variables
             output["ch{:d} seconds".format(sw_ch)] = row["Seconds"]
             output["ch{:d} nanoseconds".format(sw_ch)] = row["Nanoseconds"]
-            kv = self.get_hv_at_time(row["Seconds"])
+            kv = self.get_hv_at_time(row["Seconds"] + row["Nanoseconds"]/1e9) # will auto round to 1e-6 sec
             output["ch{:d} hv".format(sw_ch)] = kv 
             output["ch{:d} field".format(sw_ch)] = self.get_field_for_hv(kv)
             #the charge can be reconstructed from the amplitude (or integral, if you calibrate that way)
@@ -1013,7 +1013,7 @@ class Dataset:
             output["ch{:d} postbaseline".format(sw_ch)] = np.mean(v[-1*bl_window[1]:]) 
 
             #hv and timing
-            kv = self.get_hv_at_time(row["Seconds"]) #returns None if no ramp data 
+            kv = self.get_hv_at_time(row["Seconds"] + row["Nanoseconds"]/1e9) #returns None if no ramp data 
             output["ch{:d} hv".format(sw_ch)] = kv 
             output["ch{:d} field".format(sw_ch)] = self.get_field_for_hv(kv)
             output["ch{:d} seconds".format(sw_ch)] = row["Seconds"]
