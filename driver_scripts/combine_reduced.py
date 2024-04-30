@@ -32,8 +32,8 @@ run10_ds = ["ds01/","ds02/","ds03/","ds04/","ds05/","ds06/","ds07/","ds08/","ds0
 
 
 #topdir = "../../data/Run8/"
-topdir = "/p/lustre2/nexouser/data/StanfordData/angelico/hv-test-chamber/Run10/"
-datasets = run10_ds
+topdir = "/p/lustre2/nexouser/data/StanfordData/angelico/hv-test-chamber/Run7/"
+datasets = run7_ds
 
 if(use_all):
     red_files = glob.glob(topdir+"**/reduced.p", recursive=True)

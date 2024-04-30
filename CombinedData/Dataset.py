@@ -243,6 +243,10 @@ class Dataset:
         
         #timestamps in seconds
         ts_a = np.array(self.ramp_data["t"])
+
+        if(len(self.g_event_data.index) == 0):
+            self.g_event_data = pd.DataFrame(columns=["v_app", "v_mon", "dac_conv", "t"])
+
         ts_g = np.array(self.g_event_data["t"])
 
         #the algorithm heavily uses the v_applied data
