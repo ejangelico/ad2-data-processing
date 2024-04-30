@@ -670,8 +670,9 @@ class Dataset:
             width_thresh = 0.8*int(np.log10(2)*exp_tau/(dT*1e6)) #samples, width of peak to be considered a peak. a bit less than the half-height width of exponential
 
             #finding positive and negative polarity peaks separately. 
-            pospeaks, _ = scipy.signal.find_peaks(v_sm, distance=int(t_space/(dT*1e6)), height=amp_thr, width=width_thresh)
-            negpeaks, _ = scipy.signal.find_peaks(-1*v_sm, distance=int(t_space/(dT*1e6)), height=amp_thr, width=width_thresh)
+            peak_dist = np.max([int(t_space/(dT*1e6)), 1]) #minimum distance between peaks
+            pospeaks, _ = scipy.signal.find_peaks(v_sm, distance=peak_dist, height=amp_thr, width=width_thresh)
+            negpeaks, _ = scipy.signal.find_peaks(-1*v_sm, distance=peak_dist, height=amp_thr, width=width_thresh)
 
             output["ch{:d} n pospeaks".format(sw_ch)] = len(pospeaks)
             output["ch{:d} n negpeaks".format(sw_ch)] = len(negpeaks) 
