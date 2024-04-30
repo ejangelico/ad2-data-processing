@@ -8,7 +8,7 @@ datasets = ["ds01/","ds02/","ds03/","ds04/","ds05/","ds06/","ds07/","ds08/","ds0
 #datasets = ["filling/"] #filling set, long one... so adjust the time as needed
 
 path_to_config = "/g/g15/angelico/ad2-data-processing/configs/run10_config.yaml"
-jobname = "-run10"
+jobname = "-10"
 
 
 activate_venv = 'source $HOME/my_personal_env/bin/activate'
@@ -17,7 +17,7 @@ activate_venv = 'source $HOME/my_personal_env/bin/activate'
 jobcount = 0
 for ds in datasets:
     path_to_dataset = topdir+ds
-    cmd_options = '--export=ALL -p pbatch -t 00:30:00 -n 1 -J {} -o {}{}.out'.format(ds[:-1]+jobname, topdir, ds[:-1]+jobname)
+    cmd_options = '--export=ALL -p pbatch -t 00:15:00 -n 1 -J {} -o {}{}.out'.format(ds[:-1]+jobname, topdir, ds[:-1]+jobname)
     exe = 'python $HOME/ad2-data-processing/driver_scripts/reduce_datadir.py {} {}'.format(path_to_dataset, path_to_config)
     cmd_full = '{} && sbatch {} --wrap=\'{}\''.format(activate_venv,cmd_options,exe)
 

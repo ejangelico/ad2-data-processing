@@ -6,12 +6,17 @@ import pandas as pd
 import os
 import glob
 import pickle
-
+import sys
 
 output_file = "combined_reduced.p"
 use_all = False #if you want to find all, recursively, reduced.p files. 
 #otherwise, put the ds names here
 
+if(len(sys.argv) != 2):
+    print("Usage: python combine_reduced.py <# correspond to run number>")
+    sys.exit()
+
+runnum = int(sys.argv[1])
 
 run9_ds = ["ds01/","ds02/","ds03/", "ds04/","ds05/","ds06/","ds07/",\
         "ds08/","ds09/","ds10/","ds11/","ds12/","ds13/","ds14/"]
@@ -31,9 +36,11 @@ run5_ds = ["ds03/", "ds04/", "ds05/", "ds06/", \
 run10_ds = ["ds01/","ds02/","ds03/","ds04/","ds05/","ds06/","ds07/","ds08/","ds09/","ds10/","ds11/","ds12/","ds13/","ds14/"]
 
 
+runs = {5:run5_ds, 6:run6_ds, 7:run7_ds, 8:run8_ds, 9:run9_ds, 10:run10_ds}
+
 #topdir = "../../data/Run8/"
-topdir = "/p/lustre2/nexouser/data/StanfordData/angelico/hv-test-chamber/Run7/"
-datasets = run7_ds
+topdir = "/p/lustre2/nexouser/data/StanfordData/angelico/hv-test-chamber/Run{:d}/".format(runnum)
+datasets = runs[runnum]
 
 if(use_all):
     red_files = glob.glob(topdir+"**/reduced.p", recursive=True)

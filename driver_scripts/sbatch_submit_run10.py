@@ -9,7 +9,7 @@ datasets = ["ds01/","ds02/","ds03/", "ds04/","ds05/","ds06/","ds07/",\
 #datasets = ["filling/"]
 
 path_to_config = "/g/g15/angelico/ad2-data-processing/configs/run10_config.yaml"
-jobname = "-run10"
+jobname = "-10"
 
 activate_venv = 'source $HOME/my_personal_env/bin/activate'
 
