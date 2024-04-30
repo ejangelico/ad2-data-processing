@@ -102,8 +102,6 @@ def prereduce(ngmb, config_file, readthread_stamps):
     
 
     output_df = pd.DataFrame(output_dict)
-
-    print("Pre reduction of {} removed {:.2f}% of events due to the no_pulse_threshold. ".format(ngmb.input_filename, (1 - float(len(output_df.index))/len(indf.index))))
     return output_df, date
 
 
