@@ -8,7 +8,7 @@ datasets = ["ds01/","ds02/","ds03/", "ds04/","ds05/","ds06/","ds07/",\
         "ds08/","ds09/","ds10/","ds11/","ds12/"]
 
 path_to_config = "/g/g15/angelico/ad2-data-processing/configs/run8_config.yaml"
-jobname = "-run8"
+jobname = "-8"
 
 
 activate_venv = 'source $HOME/my_personal_env/bin/activate'
