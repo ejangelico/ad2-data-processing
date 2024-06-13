@@ -395,12 +395,21 @@ class AnalysisTools:
         #side to then feed to the exponential filter. 
         s_raw = interp1d(ts, vs) #interpolate raw data over a 10 to many second window
         tb = 1 #seconds
-        tb_b = [t - tb, t + tb]
+        #reduce the range of the fine-scale interpolation function
+        if(t - tb > np.min(ts)):
+            tb_b[0] = t - tb
+        else:
+            tb_b[0] = np.min(ts)
+        if(t + tb < np.max(ts)):
+            tb_b[1] = t + tb
+        else:
+            tb_b[1] = np.max(ts)
+
         fine_dt = 0.01 #seconds this is shorter than 50 ms and greater than 4 ms
         #linearly interpolate to even the time domain
         ts_fine = np.arange(tb_b[0], tb_b[1], fine_dt) #only execute that interpolation in a small region
         vs_fine = s_raw(np.array(ts_fine))
-
+    
         #exponential filter with a time constant of 50 ms
         exp_tau = 0.05 #seconds
         vs_exp, ts_exp = self.exponential_filter(ts_fine, vs_fine, exp_tau)
