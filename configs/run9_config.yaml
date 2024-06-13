@@ -13,8 +13,8 @@ ad2_reduction:
       ad2_channel: [0,1] #which channel indexed in NGMStruckBinaryFile object
       prereduced_index: [0,1] #which index in the prereduced row["Data"] = [[stream0], [stream1], ...] object
       software_channel: [2,3] #a unique identifier across all DAQ systems for the channel. 
-
-    filter_tau: 5 #microseconds gaussian filter smoothing time constant, 0 for no filtering
+    
+      filter_tau: 5 #microseconds gaussian filter smoothing time constant, 0 for no filtering
     exponential_tau: 100 #microseconds, exponential decay of integrator circuit
     no_pulse_threshold: 0 #if max-sample is less than this, don't integrate
     #this variable governs whether (1) a pulse is determined as possibly existing from raw waveform
