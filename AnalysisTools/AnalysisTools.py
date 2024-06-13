@@ -14,15 +14,17 @@ import yaml
 import pandas as pd
 from datetime import datetime, timedelta
 from scipy.ndimage import gaussian_filter
+from scipy.interpolate import interp1d
 
 
 class AnalysisTools:
     #reduced_df_pickle is the filename of the pickle file containing reduced dataframe
     #ramp_topdir is a directory for which the class looks for all "ramp.txt" files
     #recursively in order to identify ramp timing with timestamps in the reduced DF. 
-    def __init__(self, reduced_df_pickle, config_file, ramp_topdir=None):
+    def __init__(self, reduced_df_pickle, config_file, title='', ramp_topdir=None):
         self.fn = reduced_df_pickle
         self.df = None
+        self.title = title
 
         self.config_file = config_file
         self.config = {}
@@ -39,12 +41,11 @@ class AnalysisTools:
         self.ramp_topdir = ramp_topdir
         self.ramp_data = pd.DataFrame() #ramp data flat and linear, not separated into chunks associated with ramps and flat tops
         self.g_event_data = pd.DataFrame()
-        self.ramps = [] #a list of individually separated ramps
-        self.flat_tops = [] # a list of individually separated flat tops in voltage applied
         self.time_duration_map = {"t":[], "dur":[], "v":[]} # a 1:1 mapping between timestamps (unix epoch) and duration above 0V to cut out down-time from time plots. 
         if(self.ramp_topdir != None):
             self.load_hv_textfiles() #parses the files into ramp_data and g_event_data
-            self.identify_ramps() #analyzes the ramp data to separate into a list of ramps and a list of flat tops
+            self.correct_hv_data() #analyzes the ramp data to separate into a list of ramps and a list of flat tops
+            self.create_time_duration_map() #creates the time_duration_map
 
     #reloads the df object from the pickle file
     def load_dataframe(self):
@@ -73,6 +74,12 @@ class AnalysisTools:
         for i, sw_ch in enumerate(self.config["struck_reduction"]["channel_map"]["software_channel"]):
             self.struck_chmap[sw_ch] = self.config["struck_reduction"]["channel_map"]["prereduced_index"][i]
 
+    def clear_hv_data(self):
+        self.ramp_data = pd.DataFrame()
+        self.g_event_data = pd.DataFrame()
+        self.ramps = []
+        self.flat_tops = []
+        self.time_duration_map = {"t":[], "dur":[], "v":[]}
 
     def load_hv_textfiles(self):
         #one distinction of this function in this class is that
@@ -85,21 +92,25 @@ class AnalysisTools:
         #This conversion text file just has a single text floating point in it
         #that represents the DAC to kV conversion factor.
         
-        self.ramp_data = pd.DataFrame() #ramp data flat and linear, not separated into chunks associated with ramps and flat tops
-        self.g_event_data = pd.DataFrame()
+        self.clear_hv_data()
 
         for root, dirs, files in os.walk(self.ramp_topdir):
-            #only process rampdata if you're in a directory with a ramp.txt file. 
-            if(self.config["ramp_name"] in files):
-
-                if("dac_conversion.txt" in files):
+            #only process if youre in a folder that has dataset name prefix that indicates
+            #it is for scientific HV phenomena testing (and not calibration, or filling, or filter testing)
+            ds_tag = root.split('/')[-1].lower()
+            if(self.config["dataset_name"] not in ds_tag):
+                continue
+            
+            if("dac_conversion.txt" in files):
                     temp = open(os.path.join(root, "dac_conversion.txt"), "r")
                     l = temp.readlines()[0]
                     dac_conv = float(l)
-                else:
-                    dac_conv = 4 #use the 40 kV glassman value. 
-                
-                
+            else:
+                dac_conv = 4 #use the 40 kV glassman value. 
+
+            #only process rampdata if you're in a directory with a ramp.txt file. 
+            if(self.config["ramp_name"] in files):
+
                 #load the rampfile data
                 d = np.genfromtxt(os.path.join(root, self.config["ramp_name"]), delimiter=',', dtype=float)
                 ts = d[:,0] #seconds since that epoch above
@@ -113,9 +124,8 @@ class AnalysisTools:
                 temp_dict = {}
                 temp_dict["t"] = ts
                 temp_dict["v_app"] = v_app
-                temp_dict["v_mon"] = v_mon #THIS is the more accurate voltage being applied, not v_app. See calibration folder of 40 kV glassman supply. 
-                temp_dict["e_app"] = v_mon/self.config["rog_gap"] #converting to assumed electric field in kV/cm
-                temp_dict["c_mon"] = c_mon
+                temp_dict["v_mon"] = v_mon
+                temp_dict["dac_conv"] = dac_conv #used to identify which supply is being used, for calibrating the actual voltage. 
 
                 #add to the ramps dataframe
                 self.ramp_data = pd.concat([self.ramp_data, pd.DataFrame(temp_dict)], axis=0, ignore_index=True)
@@ -123,6 +133,7 @@ class AnalysisTools:
 
             #load the g_events data, if it exists
             if(self.config["g_events_name"] in files):
+
                 d = np.genfromtxt(os.path.join(root, self.config["g_events_name"]), delimiter=',', dtype=float)
                 #there is a silly thing with genfromtxt where if its a 1 line file, it makes a 1D array instead of the usual
                 #2D array. This line forces it into a 2D array so the other lines don't need some other if statement. 
@@ -138,6 +149,7 @@ class AnalysisTools:
                     temp_dict["t"] = ts
                     temp_dict["v_app"] = v_app
                     temp_dict["v_mon"] = v_mon
+                    temp_dict["dac_conv"] = dac_conv #used to identify which supply is being used, for calibrating the actual voltage. 
 
                     self.g_event_data = pd.concat([self.g_event_data, pd.DataFrame(temp_dict)], axis=0, ignore_index=True)
 
@@ -148,98 +160,286 @@ class AnalysisTools:
             self.ramp_data = self.ramp_data.sort_values("t")
 
 
-    #this function takes the flat, 1D data of HV ramp info and separates
-    #it into indexable ramps and flat tops. It additionally attempts to 
-    #make a mapping between a timestamp and the "total duration above 0V"
-    #to remove many hour/day spaces between ramps and datasets. It does so 
-    #by having an additional list of "durations" that is 1:1 indexible
-    #with the time list.
-    def identify_ramps(self, ref=None):
+    #for a given applied voltage and supply, indicated by
+    #the dac_conversion factor, what is the actual voltage applied
+    #to the cathode? This is not totally complete yet, as we are still 
+    #calibrating! But whatever information we do have, is input in this function. 
+    #By default returns uncalibrated data. 
+    def supply_calibration(self, dac_conv, v_app):
+        pth = self.config["calib_path"] #name of the calibrations folder
+        cpth = self.ramp_topdir + "../" + pth #calibration path
+        cv = v_app #corrected voltage
+
+        if(dac_conv == 4.0):
+            #40 kV glassman supply
+            if(os.path.isfile(cpth + "40kV_glassman_calibration.p")):
+                #monitor correction, a number close to 1.0, normalized by v_app
+                s = pickle.load(open(cpth + "40kV_glassman_calibration.p", "rb"))[0]
+                
+                #at a certain point, the DAC cant output large enough voltages due to current limit
+                if(v_app > 18.98):
+                    cv = s(18.98/dac_conv)*18.98
+                else:
+                    cv = s(v_app/dac_conv)*v_app
+
+        #leakage current solely from the bleeder resistors and resistances. 
+        #no capacitance leakage current included nor xenon leakage current. 
+        leakage_factor = 0.9967 
+        cv = leakage_factor*cv
+
+        return cv
+    
+
+    #This function attemps to correct the ramp data 
+    #to act as a reference for high voltage interpolation
+    #and exponential smoothing. It also will eventually
+    #be a good place to put a better calibratin of HV applied. 
+    def correct_hv_data(self):
         if(len(self.ramp_data.index) == 0):
             print("No ramp data in this dataset")
             return
-        ts = np.array(self.ramp_data["t"])
-        if(ref == None):
-            ref = "v_mon"
-        if('mon' in ref):
-            ref = "v_mon"
-            vs = np.array(self.ramp_data[ref])
-            #gaussian smooth the noisy voltage monitor data at 2 sample interval
-            vs = gaussian_filter(vs, 2)
-        else:
-            ref = "v_app"
-            vs = np.array(self.ramp_data[ref])
-
-
-        #this is not measured data, rather is applied data, so everything is digitally generated and smooth. 
-        #instead of using peak finding, its going to call a ramp a period where derivative is positive. 
-        #it will call a flat top a period where the value doesn't change. 
-        ramps = [{"t":[], "v":[]}]
-        flat_tops = [{"t":[], "v":[]}]
-        ramping = True #always starts with a ramp as opposed to flat top. use this to trigger a transition in state
-        last_vdiff = None
-        #time to duration mapping
-        td_map = {"t":[ts[0]], "dur":[0], "v":[vs[0]]} #both in seconds
-        #threshold for time to duration mapping, duration about "thresh" kV
-        td_thresh = 0.0
-
-        state_change_thresh = 0.000 #kilovolts, threshold for whether the derivative has changed. 
-        for i in range(1,len(ts)):
-            td_map["t"].append(ts[i])
-            td_map["v"].append(vs[i])
-            if(vs[i] <= td_thresh):
-                td_map["dur"].append(td_map["dur"][-1])
-            else:
-                td_map["dur"].append(td_map["dur"][-1] + self.config["ramp_sampling_time"])
-
-            vdiff = vs[i] - vs[i-1]
-            #first iteration only
-            if(last_vdiff is None): last_vdiff = vdiff
-
-            state_change = (np.sign(vdiff) != np.sign(last_vdiff)) and (np.abs(vdiff) > state_change_thresh) #if state changes, then this will be true
-            if(ramping and (state_change == False)):
-                ramps[-1]["t"].append(ts[i-1])
-                ramps[-1]["v"].append(vs[i-1])
-            elif((ramping == False) and (state_change == False) and (vdiff == 0)):
-                flat_tops[-1]["t"].append(ts[i-1])
-                flat_tops[-1]["v"].append(vs[i-1])
-            elif(ramping and state_change):
-                #what kind of state change is it? Are we going from ramp to a new ramp some time later?
-                #or are we going from a ramp to a flat top? 
-                if(vdiff < 0):
-                    #we are starting a new ramp
-                    #add the last value to the last ramp and append a fresh element to the list
-                    ramps[-1]["t"].append(ts[i-1])
-                    ramps[-1]["v"].append(vs[i-1])
-                    ramps.append({"t":[], "v":[]})
-                elif(vdiff == 0):
-                    #we are starting a flat top
-                    #add this value to the most recent flat top element and change the state flag
-                    ramping = False
-                    flat_tops[-1]["t"].append(ts[i-1])
-                    flat_tops[-1]["v"].append(vs[i-1])
-            elif((ramping == False) and state_change):
-                #we are going from flat top to a new ramp.
-                #add the last datapoint to the flat top list and make a fresh
-                #flat top element and ramp element, then change the ramping state flag
-                ramping = True
-                flat_tops[-1]["t"].append(ts[i-1])
-                flat_tops[-1]["v"].append(vs[i-1])
-                flat_tops.append({"t":[], "v":[]})
-                ramps.append({"t":[], "v":[]})
-            else:
-                print("There is a case in the ramp separation analysis that wasnt considered:")
-                print("Ramping: " + str(ramping))
-                print("State change: " + str(state_change))
-                print("vdiff: " + str(vdiff))
-                print("last vdiff: " + str(last_vdiff))
-            
-            last_vdiff = vdiff
         
-        self.ramps = ramps
-        self.flat_tops = flat_tops #saved for later.
-        self.time_duration_map = td_map
+        #timestamps in seconds
+        ts_a = np.array(self.ramp_data["t"])
+        if(len(self.g_event_data.index) == 0):
+            self.g_event_data = pd.DataFrame(columns=["v_app", "v_mon", "dac_conv", "t"])
 
+        ts_g = np.array(self.g_event_data["t"])
+        
+        #the algorithm heavily uses the v_applied data
+        #because it is smooth and has no noise. Later,
+        #once the time series is corrected, the v_mon
+        #stream will be used to calibrate the HV applied.
+        vs_a = np.array(self.ramp_data["v_app"])
+        vs_m = np.array(self.ramp_data["v_mon"])
+        vs_ga = np.array(self.g_event_data["v_app"])
+        vs_gm = np.array(self.g_event_data["v_mon"])
+        dac = np.array(self.ramp_data["dac_conv"])
+        dac_g = np.array(self.g_event_data["dac_conv"])
+
+        #calibrate the applied voltages
+        vs_cal = [self.supply_calibration(dac[i], vs_a[i]) for i in range(len(dac))]
+        
+        #the times of monitored voltages in the ramp.txt file
+        #are not always the same timestep, but they are always
+        #less than 3 seconds UNLESS we had a reset event or
+        #are turning off the system. Here are a few thresholds
+        #for the algorithm to use. 
+        reset_thresh = 3.0 #seconds
+        #eventually the time series of voltages will be
+        #divided evenly by some fine time scale, that later
+        #gets exponential smoothing based on known timeconstants
+        #in the circuit. The location before 100M resistor to chamber 
+        #is 50 ms time constant, the rogowski potential is 4 ms timeconstant. 
+        fine_dt = 0.01 #seconds this is shorter than 50 ms and greater than 4 ms
+
+        #first process the g_events, which always cause a reset to occur. 
+        #The operating principle of this algorithm is to add data points to the 
+        #time stream based on what the next starting voltage is if there is a large
+        #time gap or a gevent. These two lists are just those additional points,
+        #which will then be appended to the original list and re-sorted accordingly. 
+        new_ts = []
+        new_vs_a = [] 
+        new_vs_m = []
+        new_vs_cal = [] #calibrated voltages
+        for i, gt in enumerate(ts_g):
+            #find the closest time in the ramp data
+            idx = (np.abs(ts_a - gt)).argmin()
+            #make sure that the next data point in time is greater
+            #than the time threshold. If not, find the next one that is.
+            end_flag = False #if it reaches the end of the full time stream
+            while True:
+                if(idx < len(ts_a) - 1):
+                    if(ts_a[idx+1] - ts_a[idx] < reset_thresh):
+                        idx += 1
+                        continue
+                    else:
+                        break
+                else:
+                    end_flag = True
+                    break
+            
+            if(end_flag):
+                break
+
+            #add a data point to the ramp data that is equivalent to the
+            #g-event measurement. As this is the final voltage measured before reset. 
+            new_ts.append(gt)
+            new_vs_a.append(vs_ga[i])
+            new_vs_m.append(vs_gm[i])
+            new_vs_cal.append(self.supply_calibration(dac_g[i], vs_ga[i]))
+            #add a point that is fin_dt away from the g-event reset time
+            #and has a voltage equal to the next starting voltage
+            #(far in the future)
+            new_ts.append(gt + fine_dt)
+            new_vs_a.append(vs_a[idx+1])
+            new_vs_m.append(vs_m[idx+1])
+            new_vs_cal.append(self.supply_calibration(dac[idx+1], vs_a[idx+1]))
+        
+
+
+        #add the lists back to the time series and resort
+        ts_a = np.append(ts_a, new_ts)
+        vs_a = np.append(vs_a, new_vs_a)
+        vs_m = np.append(vs_m, new_vs_m) #artificially adding a perfect value to the monitor voltage. 
+        vs_cal = np.append(vs_cal, new_vs_cal)
+        #sort the lists by ts_a simultaneous
+        idx = np.argsort(ts_a)
+        ts_a = ts_a[idx]
+        vs_a = vs_a[idx]
+        vs_m = vs_m[idx]
+        vs_cal = vs_cal[idx]
+
+        #next, with the g-events accounted for, we will re-parse the
+        #voltage-time stream looking for any gaps in time. Correct
+        #those gaps with an fine_dt step with the next voltage value. 
+        new_ts = []
+        new_vs_a = []
+        new_vs_m = []
+        new_vs_cal = []
+        for i in range(len(ts_a) - 1):
+            if(ts_a[i+1] - ts_a[i] > reset_thresh):
+                #add a point that is fine_dt away from the reset time
+                #and has a voltage equal to the next starting voltage
+                #(far in the future)
+                new_ts.append(ts_a[i] + fine_dt)
+                new_vs_a.append(vs_a[i+1])
+                new_vs_m.append(vs_m[i+1])
+                new_vs_cal.append(vs_cal[i+1])
+
+        #repeat the sorting process
+
+        #add the lists back to the time series and resort
+        ts_a = np.append(ts_a, new_ts)
+        vs_a = np.append(vs_a, new_vs_a)
+        vs_m = np.append(vs_m, new_vs_m) #artificially adding a perfect value to the monitor voltage. 
+        vs_cal = np.append(vs_cal, new_vs_cal)
+        #sort the lists by ts_a simultaneous
+        idx = np.argsort(ts_a)
+        ts_a = ts_a[idx]
+        vs_a = vs_a[idx]
+        vs_m = vs_m[idx]
+        vs_cal = vs_cal[idx]
+
+
+        self.ramp_data = pd.DataFrame()
+        self.ramp_data["t"] = ts_a
+        self.ramp_data["v_app"] = vs_a
+        self.ramp_data["v_mon"] = vs_m
+        self.ramp_data["v_cal"] = vs_cal
+
+
+    #this function will make a 1-to-1 mapping between
+    #timestamp and how long the system has been above 
+    #a voltage threshold (close to 0V) during the run. 
+    #Effectively, this collapses large breaks like overnight
+    #sleep and lunch into a time axis that is easier to interpret. 
+    #the voltage threshold not being "time above 0V" is because
+    #the monitor and applied voltages are corrected in such a way that
+    #sometimes has a small non-physical non-zero offset. Default is 200V. 
+    def create_time_duration_map(self, v_thresh=0.2):
+        self.time_duration_map = {"t":[], "dur":[], "v":[]}
+        vs_r = np.array(self.ramp_data["v_cal"])
+        ts_r = np.array(self.ramp_data["t"])
+        for i in range(1, len(ts_r)):
+            if(vs_r[i] > v_thresh and vs_r[i-1] > v_thresh):
+                #time difference between this data point and last one
+                dt = ts_r[i] - ts_r[i-1]
+
+                #condition for the first datapoint
+                if(self.time_duration_map["t"] == []):
+                    self.time_duration_map["t"].append(ts_r[i-1])
+                    self.time_duration_map["t"].append(ts_r[i])
+                    self.time_duration_map["dur"].append(0)
+                    self.time_duration_map["dur"].append(dt)
+                    self.time_duration_map["v"].append(vs_r[i-1])
+                    self.time_duration_map["v"].append(vs_r[i])
+                else:
+                    self.time_duration_map["t"].append(ts_r[i])
+                    self.time_duration_map["dur"].append(self.time_duration_map["dur"][-1] + dt)
+                    self.time_duration_map["v"].append(vs_r[i])
+
+    #This is the function that sets the high voltage value
+    #for each event based on the timestamp of that event. 
+    #It should be applied only to corrected ramp data. 
+    #It does an interpolation as well as an exponential time
+    #smoothing based on the 50 ms time constant of the applied
+    #voltage to the 100M resistor at the base of the chamber. 
+    def get_hv_at_time(self, t):    
+        if(len(self.ramp_data.index) == 0):
+            return None
+
+        tb = 5 #seconds, either end around the timestamp in question to look at. 
+        tb_b = [t - tb, t + tb]
+        #find the closest times in the ramp data to those time bounds. 
+        idx_l = (np.abs(np.array(self.ramp_data["t"]) - tb_b[0])).argmin()
+        idx_r = (np.abs(np.array(self.ramp_data["t"]) - tb_b[1])).argmin()
+        
+        #then, because large gaps can sometimes be > 5 seconds, we will add 2
+        #data points on either end of this window to make sure the interpolation
+        #covers the range. 
+        idx_l -= 2
+        idx_r += 2
+        if(idx_l < 0): idx_l = 0
+        if(idx_r > len(self.ramp_data.index)): idx_r = len(self.ramp_data.index)
+        
+        ts = np.array(self.ramp_data["t"])[idx_l:idx_r]
+        vs = np.array(self.ramp_data["v_cal"])[idx_l:idx_r]
+        if(np.min(ts) > t or np.max(ts) < t):
+            #if this time is somehow still not in the range of the data
+            return None
+
+        #at this point, it is possible that the time range is days long,
+        #making the algorithm completely rediculously long. So we linearly
+        #interpolate the raw data to get a TRUE window of 1 second on either
+        #side to then feed to the exponential filter. 
+        s_raw = interp1d(ts, vs) #interpolate raw data over a 10 to many second window
+        tb = 1 #seconds
+        #reduce the range of the fine-scale interpolation function
+        if(t - tb > np.min(ts)):
+            tb_b[0] = t - tb
+        else:
+            tb_b[0] = np.min(ts)
+        if(t + tb < np.max(ts)):
+            tb_b[1] = t + tb
+        else:
+            tb_b[1] = np.max(ts)
+
+        fine_dt = 0.01 #seconds this is shorter than 50 ms and greater than 4 ms
+        #linearly interpolate to even the time domain
+        ts_fine = np.arange(tb_b[0], tb_b[1], fine_dt) #only execute that interpolation in a small region
+        vs_fine = s_raw(np.array(ts_fine))
+    
+        #exponential filter with a time constant of 50 ms
+        exp_tau = 0.05 #seconds
+        vs_exp, ts_exp = self.exponential_filter(ts_fine, vs_fine, exp_tau)
+
+        #return the value that is the linear interpolation of the filtered wave
+        s = interp1d(ts_exp, vs_exp)
+        v_temp = s(t)
+
+        #apply a calibration factor here based on a calibration file. 
+        #I do not have yet a calibration for the 75 kV glassman. I do for the
+        #40 kV glassman. When that gets done, implement it here. 
+        v_temp = 1*v_temp
+
+        return v_temp
+
+
+
+    def exponential_filter(self, ts, vs, tau):
+        filt_vs = [vs[0]]
+        a = np.exp(-1*np.abs(ts[0] - ts[1])/tau)
+        for i in range(1, len(vs)):
+            filt_vs.append(a*filt_vs[i-1] + (1 - a)*vs[i])
+        return np.array(filt_vs), ts
+
+    def get_gevents_in_window(self, t0, t1):
+        if(len(self.g_event_data.index) == 0):
+            return None
+
+        mask = (self.g_event_data["t"] >= t0) & (self.g_event_data["t"] <= t1)
+        return self.g_event_data[mask]
 
     #small tool for finding duration given a 
     #timestamp using the time_duration_map
@@ -285,6 +485,7 @@ class AnalysisTools:
 
         return output_events
 
+
     #this will get waveforms, from the prereduced
     #files, based on an input pandas dataframe
     #as opposed to a mask like in the above function. 
@@ -324,8 +525,15 @@ class AnalysisTools:
     #sw_ch is the channel to get time info from input_events
     #Finds events with timestamps (sec and nanosec) within 
     #a provided half-coincidence window. 
+
+    #A key element that makes this function somewhat long is that we do NOT
+    #want to return copies of events. This happens, for example, when charge channel
+    #3 is used as the sw_ch, and the coinc window is large enough to include
+    #multiple charge depositions in the window, each charge deposition will
+    #have its own time through the loop for coincidence and duplicate in the 
+    #output list of dataframes. 
     def get_coincidence(self, input_events, sw_ch, coinc, coinc_ns):
-        output_dfs = [] #list of dataframes that match coincidence cuts for each event
+        event_dfs = [] #list of dataframes that match coincidence cuts for each event
         for i, ev in input_events.iterrows():
             t0 = ev["ch{:d} seconds".format(sw_ch)]
             t0_ns = ev["ch{:d} nanoseconds".format(sw_ch)]
@@ -347,9 +555,124 @@ class AnalysisTools:
                 ch_subdf = selected[selected.columns[selected.columns.str.contains('ch{:d}'.format(sch))]]
                 temp_df = pd.concat([temp_df, ch_subdf], ignore_index=True)
                 
-            output_dfs.append(temp_df)
+            event_dfs.append(temp_df)
 
-        return output_dfs
+        #this is the start of the code to remove duplicates. It uses the evidx attribute
+        #to only keep events that have the largest set of evidxs for each unique combination
+        #of evidxs in a single event window. 
+        filtered_event_dfs = []
+        #first get all evidxs using the sw_ch of interest
+        evidxs = []
+        for ev in event_dfs:
+            mask = ~(np.abs(ev["ch{:d} evidx".format(sw_ch)]).isna())
+            evidxs.append(tuple(ev[mask]["ch{:d} evidx".format(sw_ch)]))
+
+        #find only unique evidxs
+        evidxs_set = list(set(evidxs))
+        #for each event, remove any event that is a subset of a different
+        #event. This will keep only the largest sets that contain other subsets. 
+        kept_evidxs = []
+        for i in range(len(evidxs_set)):
+            test_set = set(evidxs_set[i])
+            keep = True #switches if we dont want to keep
+            for j in range(len(evidxs_set)):
+                if(i == j): continue
+                if(test_set.issubset(evidxs_set[j])):
+                    keep = False
+                    break
+            if(keep == True):
+                kept_evidxs.append(evidxs_set[i])
+
+        #propagate that back to the event_dfs
+        added_evidxs = [] #to make sure not to add duplicates again
+        for ev in event_dfs:
+            mask = ~(np.abs(ev["ch{:d} evidx".format(sw_ch)]).isna())
+            if(tuple(ev[mask]["ch{:d} evidx".format(sw_ch)]) in kept_evidxs and (tuple(ev[mask]["ch{:d} evidx".format(sw_ch)]) not in added_evidxs)):
+                added_evidxs.append(tuple(ev[mask]["ch{:d} evidx".format(sw_ch)]))
+                filtered_event_dfs.append(ev)
+
+        event_dfs = filtered_event_dfs
+            
+
+        return event_dfs
+    
+
+    #use this function to get light triggers
+    #where the trigger is NOT due to the charge
+    #trigger output alone 
+    def get_light_triggers(self):
+        pmt_thresh = 4 #times the noise std
+        #It is perfectly reasonable for the charge trigger output to come in
+        #during a light pulse. So instead of making this function about ch4 being
+        #above or below threshold, I will make it about the PMT channels having something
+        #other than noise. 
+
+        #later, for this mask, use min-max sample instead of a baseline check, as the baseline is often affected
+        #by the HV phenomena in this light channel. 
+        mask = (~self.df["ch0 amp"].isna()) & (((self.df["ch0 amp"] - self.df["ch0 baseline"]) > pmt_thresh*self.df["ch0 noise"]) \
+                                               | ((self.df["ch1 amp"] - self.df["ch1 baseline"]) > pmt_thresh*self.df["ch1 noise"]))
+        return self.df[mask]
+    
+
+    #this function is intended to find all light events
+    #that are far away in time from any charge related events. Requires
+    #some time period "T" away from charge triggers with seconds precision only. 
+    #N being None or being an integer triggers a more efficient version of this function.
+    #if you just want 1000 random light triggers, you can randomly select and check if has
+    #any proximity to a charge trigger. If it is None, it tries to get ALL light triggers. 
+    def get_cosmic_triggers(self, T, N=None):
+        #getting all light triggers
+        light_df = self.get_light_triggers()
+        #select only those triggers that are a time T at least away
+        #from any charge triggers. Use the amplitude threshold of the
+        #charge channels to determine if a charge trigger is noise or not, 
+        #and accept events where there is just noise waveform on charge scope. 
+        amp_thr = self.config["ad2_reduction"]["glitch"]["fit_amplitude_threshold"] #sigma
+        ch_df = self.df[(~self.df["ch3 amp"].isna())]
+        ch_df = ch_df[np.abs(ch_df["ch3 amp"]) > amp_thr*ch_df["ch3 noise"]]
+
+        output_light_df = pd.DataFrame()
+
+        if(N == None):
+            #ch_df is usually much smaller, so I will loop through
+            #each charge event and remove all light events that fall within
+            #the timeframe. 
+            N_good_events = 0
+            for i, row in light_df.iterrows():
+                if(N_good_events % 100 == 0): print("On event {:d} of {:d}".format(N_good_events, len(light_df.index)))
+                t0 = row["ch0 seconds"]
+                charge_prox_mask = (np.abs(ch_df["ch3 seconds"] - t0) < T)
+                if(len(ch_df[charge_prox_mask].index) == 0):
+                    output_light_df = pd.concat([output_light_df, row], axis=1)
+                    N_good_events += 1
+
+        else:
+            N = int(N)
+            chosen_indices = []
+            N_good_events = 0
+            while True:
+                if(N_good_events >= N): break
+                if(N_good_events % 100 == 0): print("On event {:d} of {:d}".format(N_good_events, N))
+                index = np.random.randint(0, len(light_df.index))
+                if(index in chosen_indices): continue
+                chosen_indices.append(index)
+                t0 = light_df.iloc[index]["ch0 seconds"]
+                charge_prox_mask = (np.abs(ch_df["ch3 seconds"] - t0) < T)
+                if(len(ch_df[charge_prox_mask].index) == 0):
+                    output_light_df = pd.concat([output_light_df, light_df.iloc[index]], axis=1)
+                    N_good_events += 1
+
+        output_light_df = output_light_df.transpose()
+        output_light_df = output_light_df.reset_index(drop=True)
+
+        return output_light_df
+
+
+
+
+
+
+
     
 
 

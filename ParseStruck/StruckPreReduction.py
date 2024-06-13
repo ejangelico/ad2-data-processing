@@ -45,6 +45,7 @@ def prereduce(ngmb, config_file, readthread_stamps):
     #"Data" all channels are always digitized, "Data": [[v0, v1, v2, ...], [v0, v1, v2, ...]], one voltage stream for each channel. 
     #In merging stage, two additional columns will appear. Channels which will be [0,1,2,3] where the channel numbers are unique across DAQ systems,
     #and Type: ["pmts", "pmts", "glitch", "anode"] associated with the channel numbers and prefixes. 
+    #example of time in seconds and nanoseconds: 1617220000.123456789; seconds = 1617220000, nanoseconds = 123456789
     pref = config["prefix"]
     output_dict = {"Seconds":[], "Nanoseconds": [], "Data": []}
 
@@ -65,7 +66,6 @@ def prereduce(ngmb, config_file, readthread_stamps):
 
     #we are now going to loop through the dataframe and package the data, converting to mV
     print("Prereducing data...")
-    pol = np.sign(int(config["polarity"])) #will use this so that every data stream is positive. 
     mv = float(config["mv_per_adc"])
     dT = 1.0/float(config["clock"]) #seconds
     for i, row in indf.iterrows():
@@ -73,7 +73,6 @@ def prereduce(ngmb, config_file, readthread_stamps):
         for ch in range(len(row["Data"])):
             v = np.array(row["Data"][ch])
             v_mv = v*mv
-            v_mv = v_mv*pol 
             vs.append(v_mv)
 
             
@@ -103,8 +102,6 @@ def prereduce(ngmb, config_file, readthread_stamps):
     
 
     output_df = pd.DataFrame(output_dict)
-
-    print("Pre reduction of {} removed {:.2f}% of events due to the no_pulse_threshold. ".format(ngmb.input_filename, (1 - float(len(output_df.index))/len(indf.index))))
     return output_df, date
 
 
